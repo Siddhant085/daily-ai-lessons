@@ -1,0 +1,26 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Home · Daily AI Lessons</title><meta name="color-scheme" content="light dark"><link rel="stylesheet" href="assets/site.css"></head><body>
+<header class="site"><nav><a class="brand" href="./">🧠 Daily AI</a>
+<a class="tab" href="./" aria-current="page">Home</a><a class="tab" href="archive.html" >Archive</a><a class="tab" href="review.html" >Review</a></nav></header>
+<main class="wrap" id="app"><p class="muted">Loading…</p></main>
+<script src="assets/site.js"></script><script>
+(async () => {
+  const app = document.getElementById('app');
+  const L = await DAL.loadLessons().catch(() => []);
+  const srs = DAL.loadSRS(); const now = Date.now();
+  let due = 0, total = 0;
+  L.forEach(l => (l.cards||[]).forEach((c,i) => { total++; const s = srs[DAL.cardId(l,i)]; if (s && s.due <= now) due++; }));
+  const today = DAL.todayISO(); const latest = L[0];
+  let h = `<h1>Daily AI Lessons</h1><p class="muted">One interactive lesson a day on AI &amp; computer use.</p>
+  <div class="stats"><div class="stat"><b>${DAL.streak(L)}</b><span>day streak</span></div>
+  <div class="stat"><b>${L.length}</b><span>lessons</span></div><div class="stat"><b>${due}</b><span>cards due</span></div></div>`;
+  if (!latest) {
+    h += `<div class="card empty"><div class="big">🌱</div><h3>First lesson coming soon</h3>
+      <p class="muted">The Daily AI Tutor will publish the first lesson here. Check back tomorrow.</p></div>`;
+  } else {
+    h += `<h2>${latest.date === today ? "Today's lesson" : 'Latest lesson'}</h2>` + DAL.lessonCard(latest, {cta: true});
+  }
+  h += `<div class="row"><a class="btn" href="archive.html">📚 Archive</a><a class="btn ${due ? 'primary' : ''}" href="review.html">🔁 Review${total ? ` (${due} due)` : ''}</a></div>`;
+  app.innerHTML = h;
+})();
+</script></body></html>

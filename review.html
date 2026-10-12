@@ -1,0 +1,61 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Review · Daily AI Lessons</title><meta name="color-scheme" content="light dark"><link rel="stylesheet" href="assets/site.css"></head><body>
+<header class="site"><nav><a class="brand" href="./">🧠 Daily AI</a>
+<a class="tab" href="./" >Home</a><a class="tab" href="archive.html" >Archive</a><a class="tab" href="review.html" aria-current="page">Review</a></nav></header>
+<main class="wrap" id="app"><p class="muted">Loading…</p></main>
+<script src="assets/site.js"></script><script>
+(async () => {
+  const app = document.getElementById('app'), E = DAL.esc;
+  const L = await DAL.loadLessons().catch(() => []);
+  const srs = DAL.loadSRS(), now = Date.now(), SIZE = 10, NEW = 5;
+  const all = []; L.forEach(l => (l.cards||[]).forEach((c,i) => all.push({...c, id: DAL.cardId(l,i), lesson: l})));
+  const due = all.filter(c => srs[c.id] && srs[c.id].due <= now).sort((a,b) => srs[a.id].due - srs[b.id].due);
+  const fresh = all.filter(c => !srs[c.id]).sort((a,b) => a.lesson.date.localeCompare(b.lesson.date));
+  let queue = due.slice(0, SIZE).concat(fresh.slice(0, Math.max(0, Math.min(NEW, SIZE - Math.min(due.length, SIZE)))));
+  if (!queue.length) {
+    const next = Object.values(srs).map(s => s.due).filter(d => d > now).sort()[0];
+    app.innerHTML = `<h1>Review</h1><div class="card empty"><div class="big">${all.length ? '✅' : '🌱'}</div>
+      <h3>${all.length ? 'All caught up!' : 'No review cards yet'}</h3><p class="muted">${all.length ? (next ? 'Next card due ' + new Date(next).toLocaleString() : '') : 'Cards appear here after lessons are published.'}</p>
+      <a class="btn" href="./">Home</a></div>`; return;
+  }
+  const total = queue.length, tally = [0,0,0,0]; let done = 0, mcRight = 0, mcTotal = 0;
+  function show() {
+    if (!queue.length) return summary();
+    const c = queue[0], st = srs[c.id];
+    const mc = Array.isArray(c.choices) && c.choices.length > 1;
+    app.innerHTML = `<h1>Review</h1><div class="muted">${done} / ${total} done${st ? '' : ' · new card'}</div>
+      <div class="progress"><div style="width:${100*done/total}%"></div></div>
+      <div class="card"><div class="muted"><a href="${E(c.lesson.path)}">${E(c.lesson.title)}</a></div>
+      <h3>${E(c.q)}</h3>
+      ${mc ? c.choices.map((ch,i) => `<button class="btn choice" data-i="${i}">${E(ch)}</button>`).join('') : `<button class="btn primary" id="reveal" style="width:100%">Show answer</button>`}
+      <div id="ans"></div></div>`;
+    const reveal = (extra='') => {
+      document.getElementById('ans').innerHTML = `<div class="answer">${extra}<p><b>Answer:</b> ${E(c.a)}</p>
+        ${c.explanation ? `<p class="muted">${E(c.explanation)}</p>` : ''}
+        <div class="grades">${['Again','Hard','Good','Easy'].map((g,i) => `<button class="btn g-${g.toLowerCase()}" data-g="${i}">${g}<small>${DAL.preview(st,i)}</small></button>`).join('')}</div></div>`;
+      document.querySelectorAll('[data-g]').forEach(b => b.onclick = () => grade(+b.dataset.g));
+    };
+    if (mc) document.querySelectorAll('.choice').forEach(b => b.onclick = () => {
+      const pick = c.choices[+b.dataset.i], ok = norm(pick) === norm(c.a) || String(+b.dataset.i) === String(c.a);
+      mcTotal++; if (ok) mcRight++;
+      document.querySelectorAll('.choice').forEach(x => { x.disabled = true; if (norm(c.choices[+x.dataset.i]) === norm(c.a)) x.classList.add('correct'); });
+      if (!ok) b.classList.add('wrong');
+      reveal(`<p>${ok ? '✅ Correct!' : '❌ Not quite.'}</p>`);
+    });
+    else document.getElementById('reveal').onclick = e => { e.target.remove(); reveal(); };
+  }
+  const norm = s => String(s).trim().toLowerCase();
+  function grade(g) {
+    const c = queue.shift(); srs[c.id] = DAL.schedule(srs[c.id], g); DAL.saveSRS(srs); tally[g]++;
+    if (g === 0) queue.push(c); else done++;
+    show();
+  }
+  function summary() {
+    app.innerHTML = `<h1>Session complete 🎉</h1><div class="stats"><div class="stat"><b>${total}</b><span>cards</span></div>
+      <div class="stat"><b>${tally[2]+tally[3]}</b><span>good / easy</span></div><div class="stat"><b>${tally[0]}</b><span>again</span></div></div>
+      ${mcTotal ? `<p class="muted" style="text-align:center">Multiple choice: ${mcRight}/${mcTotal} correct first try</p>` : ''}
+      <div class="row" style="margin-top:16px"><a class="btn" href="./">Home</a><a class="btn primary" href="review.html">Another session</a></div>`;
+  }
+  show();
+})();
+</script></body></html>

@@ -1,0 +1,25 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Archive · Daily AI Lessons</title><meta name="color-scheme" content="light dark"><link rel="stylesheet" href="assets/site.css"></head><body>
+<header class="site"><nav><a class="brand" href="./">🧠 Daily AI</a>
+<a class="tab" href="./" >Home</a><a class="tab" href="archive.html" aria-current="page">Archive</a><a class="tab" href="review.html" >Review</a></nav></header>
+<main class="wrap" id="app"><p class="muted">Loading…</p></main>
+<script src="assets/site.js"></script><script>
+(async () => {
+  const app = document.getElementById('app');
+  const L = await DAL.loadLessons().catch(() => []);
+  app.innerHTML = `<h1>Archive</h1><input type="search" id="q" placeholder="Search lessons…" aria-label="Search">
+   <div class="filters"><button class="btn" data-f="all" aria-pressed="true">All</button><button class="btn" data-f="fundamentals" aria-pressed="false">Fundamentals</button><button class="btn" data-f="latest" aria-pressed="false">Latest</button></div><div id="list"></div>`;
+  let f = new URLSearchParams(location.search).get('tag') || 'all';
+  const q = document.getElementById('q'), list = document.getElementById('list');
+  function render() {
+    document.querySelectorAll('[data-f]').forEach(b => b.setAttribute('aria-pressed', b.dataset.f === f));
+    const s = q.value.trim().toLowerCase();
+    const r = L.filter(l => (f === 'all' || (l.tags||[]).includes(f)) &&
+      (!s || [l.title, l.summary, (l.tags||[]).join(' '), l.date].join(' ').toLowerCase().includes(s)));
+    list.innerHTML = r.length ? r.map(l => DAL.lessonCard(l)).join('') :
+      `<div class="card empty"><div class="big">${L.length ? '🔍' : '🌱'}</div><p class="muted">${L.length ? 'No lessons match.' : 'No lessons yet — the first one is coming soon.'}</p></div>`;
+  }
+  document.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { f = b.dataset.f; render(); });
+  q.oninput = render; render();
+})();
+</script></body></html>
