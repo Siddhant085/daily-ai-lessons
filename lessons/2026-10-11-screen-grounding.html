@@ -1,0 +1,184 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Screen Grounding for Computer-Use Agents</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<style>
+body{font-family:Inter,system-ui,sans-serif;max-width:900px;margin:0 auto;padding:24px;color:#1d2433;line-height:1.6;background:#fafbfc}
+h1{font-size:2rem;margin-bottom:4px}h2{border-bottom:2px solid #e3e7ee;padding-bottom:4px;margin-top:40px}
+code,.mono{font-family:'JetBrains Mono',monospace;font-size:.9em;background:#eef1f6;padding:1px 4px;border-radius:4px}
+.card{background:#fff;border:1px solid #e3e7ee;border-radius:10px;padding:16px 20px;margin:16px 0}
+.note{border-left:4px solid #4f7cff;background:#f2f6ff}
+table{border-collapse:collapse;width:100%;font-size:.92em}td,th{border:1px solid #e3e7ee;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f3f5f9}
+#screen{position:relative;width:640px;height:400px;max-width:100%;border:2px solid #333;border-radius:6px;background:#f6f7f9;cursor:crosshair;overflow:hidden;user-select:none}
+.ui{position:absolute;border-radius:4px;font-size:12px;display:flex;align-items:center;justify-content:center}
+.dot{position:absolute;width:12px;height:12px;border-radius:50%;transform:translate(-6px,-6px);pointer-events:none}
+.ctl{display:flex;gap:16px;flex-wrap:wrap;margin:10px 0;align-items:center}
+.q{margin:14px 0}.q button{display:block;margin:4px 0;text-align:left;width:100%;padding:8px;border:1px solid #cfd6e2;border-radius:6px;background:#fff;cursor:pointer;font:inherit}
+.q button.ok{background:#e3f7e8;border-color:#3aa55b}.q button.bad{background:#fde8e8;border-color:#d64545}.exp{font-size:.9em;color:#444;margin-top:4px}
+svg text{font-family:Inter,sans-serif;font-size:12px}
+</style></head><body><nav id="dal-nav" style="position:sticky;top:0;z-index:9999;display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;background:#111827;font:600 15px/1.2 system-ui,sans-serif"><a href="../" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">← Home</a><a href="../archive.html" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">Archive</a><a href="../review.html" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">Review</a></nav>
+<h1>Grounding Actions to Pixels</h1><p style="color:#667">How VLM-based computer-use agents turn "click the Save button" into <code>(x, y)</code> — Lesson for Siddhant · Oct 11, 2026</p>
+
+<h2>1. Intuition first</h2>
+<div class="card note">A computer-use agent has two jobs: <b>decide what to do</b> (planning) and <b>say exactly where</b> (grounding). Planning is language; grounding is geometry. LLMs are great at the first and historically bad at the second because their output is a token stream, not a spatial pointer. Every grounding approach is a way to bridge "text out" to "point on screen" — either by giving the model <i>labels to name</i> (element IDs), or by teaching it to <i>write coordinates as text</i>.</div>
+
+<h2>2. The problem</h2>
+<p>Input: screenshot <i>I</i> (W×H) + instruction <i>q</i> (+ history). Output: an action like <code>click(x,y)</code>, <code>type("...")</code>, or <code>click(element_17)</code>. Success (in benchmarks) = predicted point falls inside the target element's bounding box. Small targets, dense UIs, and huge screens make this hard.</p>
+
+<h2>3. Diagram: the grounding pipeline</h2>
+<svg viewBox="0 0 860 230" width="100%">
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0L8,4L0,8z" fill="#555"/></marker></defs>
+<g fill="#fff" stroke="#4f7cff" stroke-width="1.5">
+<rect x="5" y="80" width="120" height="60" rx="8"/><rect x="160" y="80" width="140" height="60" rx="8"/><rect x="335" y="80" width="150" height="60" rx="8"/><rect x="520" y="20" width="160" height="60" rx="8"/><rect x="520" y="140" width="160" height="60" rx="8"/><rect x="715" y="80" width="140" height="60" rx="8"/></g>
+<g stroke="#555" marker-end="url(#a)"><line x1="125" y1="110" x2="158" y2="110"/><line x1="300" y1="110" x2="333" y2="110"/><line x1="485" y1="100" x2="518" y2="55"/><line x1="485" y1="120" x2="518" y2="165"/><line x1="680" y1="50" x2="713" y2="100"/><line x1="680" y1="170" x2="713" y2="120"/></g>
+<g text-anchor="middle"><text x="65" y="105">Screenshot</text><text x="65" y="122">2560×1440</text>
+<text x="230" y="105">Resize / tile</text><text x="230" y="122">→ model res</text>
+<text x="410" y="105">VLM</text><text x="410" y="122">(+ instruction)</text>
+<text x="600" y="45">A) Element ID</text><text x="600" y="62">SoM / a11y tree</text>
+<text x="600" y="165">B) Coord tokens</text><text x="600" y="182">"(0.42, 0.17)"</text>
+<text x="785" y="105">Rescale to</text><text x="785" y="122">screen pixels → click</text></g>
+<text x="430" y="222" text-anchor="middle" fill="#a33">⚠ Any mismatch between the resize step and the rescale step = systematic click offset</text>
+</svg>
+
+<h2>4. Approaches</h2>
+<h3>A. Element IDs: Set-of-Marks & accessibility trees</h3>
+<p>Overlay numbered boxes on detected elements (Set-of-Mark prompting; or a parser like OmniParser), or serialize the DOM/accessibility tree, and have the model output an ID. The harness maps ID → box center. <b>Pros:</b> exact clicks, works with general VLMs, no coordinate training. <b>Cons:</b> depends on the detector/a11y tree (canvas apps, games, custom widgets, remote desktops often have none); marks occlude content; long trees blow context.</p>
+<h3>B. Direct coordinate prediction as text</h3>
+<p>The model emits numbers as tokens: <code>click(512, 300)</code>. Choices that matter:</p>
+<ul>
+<li><b>Normalized vs absolute.</b> Normalized: SeeClick emits [0,1] ratios with two decimals; Qwen-VL and Qwen2-/Qwen3-VL use a relative 0–1000 grid is resolution-invariant. Absolute pixels (Qwen2.5-VL is commonly described as switching to absolute coordinates in the resized image's pixel space — check your model's docs; Anthropic's computer-use tool works in the declared display's pixel space) are more literal but tie the output to a specific image size.</li>
+<li><b>Tokenization.</b> "1" "2" "3" digit tokens vs whole-number tokens vs dedicated location tokens (e.g. <code>&lt;loc_123&gt;</code> bins). Digit-level outputs have no notion of numeric distance in the loss: predicting 499 vs 500 costs as much as 900 — one reason RL / distance-aware rewards have become popular for grounding.</li>
+<li><b>Resolution & tiling.</b> Models see a resized or tiled image (e.g. dynamic-resolution patching). A 4K screen downscaled to ~1300px wide shrinks a 16px icon to ~5px — below one vision patch. Tiling/cropping preserves detail but you must map tile-local coords back to global ones.</li>
+</ul>
+<h3>C. Hybrids & search</h3><p>Coarse-to-fine zoom: predict a region, crop, re-ground (e.g. ScreenSeekeR on ScreenSpot-Pro). Planner+grounder split: a strong LLM writes "the blue Export button in the top-right toolbar", a specialist grounder (SeeClick, OS-Atlas, UGround, UI-TARS) outputs the point.</p>
+
+<table><tr><th>System</th><th>Grounding style</th><th>Notes</th></tr>
+<tr><td>SeeClick (2024)</td><td>Coords as text, relative</td><td>Introduced ScreenSpot; GUI grounding pretraining from web/mobile data</td></tr>
+<tr><td>OS-Atlas (2024)</td><td>Coords as text</td><td>Large cross-platform grounding corpus (Windows/macOS/Linux/Android/web)</td></tr>
+<tr><td>UGround (2024)</td><td>Coords as text</td><td>Pure-vision universal grounder trained on large synthetic web data</td></tr>
+<tr><td>UI-TARS (2025)</td><td>Coords as text, end-to-end agent</td><td>Native agent model: perception + grounding + reasoning in one</td></tr>
+<tr><td>Claude computer use</td><td>Pixel coords in screenshot space</td><td>Tool API with declared display size; Anthropic recommends scaling screenshots down and mapping back</td></tr>
+<tr><td>OpenAI CUA / Operator</td><td>Pixel coords from screenshots</td><td>GPT-4o-based model trained with RL; reports OSWorld/WebArena results</td></tr>
+</table>
+
+<h2>5. Interactive: normalized vs pixel, and the rescaling trap</h2>
+<div class="card">
+<p>Click anywhere on the mock screen. The real screen is <b><span id="rs">2560×1600</span></b>; the model sees a resized image. We simulate a model that outputs coordinates in its <i>input image</i> space, and a harness that maps them back — correctly or with a common bug.</p>
+<div class="ctl">
+<label>Real screen: <select id="real"><option value="2560x1600">2560×1600</option><option value="1920x1080">1920×1080</option><option value="3840x2160">3840×2160</option></select></label>
+<label>Model input: <select id="model"><option value="1280x800">1280×800</option><option value="1024x768">1024×768 (aspect changes!)</option><option value="1366x768">1366×768</option></select></label>
+<label>Harness: <select id="bug"><option value="ok">correct rescale</option><option value="none">forgot to rescale</option><option value="aspect">letterbox/pad ignored</option></select></label></div>
+<div id="screen">
+ <div class="ui" style="left:0;top:0;width:100%;height:28px;background:#2d3340;color:#fff;justify-content:flex-start;padding-left:10px">● ● ●  Editor — report.docx</div>
+ <div class="ui" style="left:540px;top:36px;width:84px;height:26px;background:#4f7cff;color:#fff" data-n="Save">Save</div>
+ <div class="ui" style="left:600px;top:4px;width:18px;height:18px;background:#d64545;color:#fff" data-n="Close">×</div>
+ <div class="ui" style="left:10px;top:40px;width:120px;height:340px;background:#e9ecf2;align-items:flex-start;padding-top:8px">Sidebar</div>
+ <div class="ui" style="left:150px;top:80px;width:360px;height:280px;background:#fff;border:1px solid #ccd">Document canvas</div>
+ <div class="ui" style="left:530px;top:330px;width:16px;height:16px;background:#888;color:#fff;font-size:9px" data-n="Tiny settings icon">⚙</div>
+ <div id="dGT" class="dot" style="background:#3aa55b;display:none"></div><div id="dP" class="dot" style="background:#d64545;display:none"></div>
+</div>
+<p class="mono" id="out" style="white-space:pre;background:#f3f5f9;padding:10px;border-radius:6px">Click the screen…</p>
+<p style="font-size:.9em">🟢 = where you intended (ground truth). 🔴 = where the click lands after the harness maps the model output back to the real screen.</p>
+</div>
+
+<h2>6. Worked example</h2>
+<div class="card">
+<p>Screen 2560×1600. Harness resizes to 1280×800 (scale 0.5). Target "Save" box in real pixels: x∈[2160,2496], y∈[144,248].</p>
+<ol><li>Model sees Save at ~x∈[1080,1248], y∈[72,124]; emits <code>click(1164, 98)</code> (input-image pixels).</li>
+<li>Normalized equivalent: (1164/1280, 98/800) = <b>(0.909, 0.1225)</b> — identical for any resolution.</li>
+<li>Correct mapping: (0.909·2560, 0.1225·1600) = <b>(2328, 196)</b> ✓ inside the box.</li>
+<li>Bug — forgot to rescale: click at (1164, 98) on the real screen → lands mid-toolbar, ~1164px left of target. ✗</li>
+<li>Small-target sanity check: a 32px icon on the real screen is 16px in the model image (~0.6 of a 28px ViT patch). A ±10px model error is ±20px on screen — larger than the icon. This is why ScreenSpot-Pro scores are so much lower than ScreenSpot.</li></ol></div>
+
+<h2>7. Training data sources</h2>
+<ul><li><b>Web crawls</b>: render pages, take DOM element boxes + text/alt/aria labels → (screenshot, referring expression, box). Cheap and huge (SeeClick, UGround, OS-Atlas).</li>
+<li><b>Mobile</b>: Android view hierarchies / accessibility metadata (e.g., RICO, AITW-style datasets).</li>
+<li><b>Desktop</b>: accessibility APIs on Windows/macOS/Linux via automated exploration (OS-Atlas toolkit).</li>
+<li><b>Synthetic referring expressions</b>: LLMs rewrite element metadata into natural, functional or positional descriptions ("the button to the left of Cancel").</li>
+<li><b>Agent trajectories</b>: human or model demonstrations; online RL rollouts in VMs (UI-TARS, CUA).</li></ul>
+
+<h2>8. Benchmarks</h2>
+<ul><li><b>ScreenSpot</b> (SeeClick): 1,200+ instructions on 600+ screenshots across iOS/Android/macOS/Windows/web, text vs icon targets. Largely saturated by 2025 models.</li>
+<li><b>ScreenSpot-v2</b>: cleaned annotations.</li>
+<li><b>ScreenSpot-Pro</b>: 1,581 instructions, 23 professional apps, 5 industries, 3 OSes, high-res with tiny targets; best baseline at release (OS-Atlas-7B) only 18.9%, ScreenSeekeR visual search 48.1% training-free.</li>
+<li><b>End-to-end</b>: OSWorld, WebArena, AndroidWorld measure task success where grounding is one failure source.</li></ul>
+
+<h2>9. Common failure modes</h2>
+<ul><li>Rescale / aspect / DPI mismatch (HiDPI: logical vs physical pixels on macOS ×2!).</li>
+<li>Tiny icons lost after downscaling; icon-only targets far worse than text targets.</li>
+<li>Off-by-element: clicks the label next to the checkbox, or the neighbor in a dense toolbar.</li>
+<li>Ambiguity: two "OK" buttons; model picks the wrong one with high confidence.</li>
+<li>Stale screenshot: UI moved (animation, scroll, popup) between capture and click.</li>
+<li>Hallucinated targets: element doesn't exist (benchmarks with negative instructions test refusal).</li>
+<li>Domain shift: pro apps (CAD, IDEs, DAWs) differ from web-trained data.</li></ul>
+
+<h2>10. Practical tips</h2>
+<ul><li>Own one coordinate contract: log <i>raw model output, image size sent, screen size, scale factors</i> on every action. Unit-test the round trip.</li>
+<li>Preserve aspect ratio; if you pad, subtract the padding offset before scaling.</li>
+<li>Use a11y/DOM IDs when available, pixels as fallback — hybrid beats either alone on messy apps.</li>
+<li>Zoom-in for small targets: crop around the first guess and re-ground at higher effective resolution.</li>
+<li>Verify after acting: take a screenshot, check expected state change; retry with a refined description.</li>
+<li>Evaluate on ScreenSpot-Pro-like slices from <i>your</i> target apps, split text vs icon.</li>
+<li>For training, consider distance-aware rewards (RL on hit/miss or distance) instead of only token CE on digits.</li></ul>
+
+<h2>11. Key takeaways</h2>
+<div class="card note"><ol><li>Grounding = turning a description into a point; it's separable from planning and often handled by a specialist.</li>
+<li>Element IDs are exact but depend on structure; coordinate tokens are universal but noisy.</li>
+<li>Normalized coords decouple output from resolution; the #1 production bug is still scale mapping.</li>
+<li>Downscaling kills small targets — high-res benchmarks (ScreenSpot-Pro) expose this; crop/zoom helps.</li>
+<li>Close the loop: verify each action from the next screenshot.</li></ol></div>
+
+<h2>12. Quiz</h2><div id="quiz"></div><p id="score" style="font-weight:600"></p>
+
+<h2>13. Sources</h2>
+<ul>
+<li>Cheng et al., <a href="https://arxiv.org/abs/2401.10935">SeeClick: Harnessing GUI Grounding for Advanced Visual GUI Agents</a> (introduces ScreenSpot)</li>
+<li>Wu et al., <a href="https://arxiv.org/abs/2410.23218">OS-Atlas: A Foundation Action Model for Generalist GUI Agents</a></li>
+<li>Gou et al., <a href="https://arxiv.org/abs/2410.05243">UGround: Navigating the Digital World as Humans Do</a></li>
+<li>Qin et al., <a href="https://arxiv.org/abs/2501.12326">UI-TARS: Pioneering Automated GUI Interaction with Native Agents</a></li>
+<li>Li et al., <a href="https://arxiv.org/abs/2504.07981">ScreenSpot-Pro: GUI Grounding for Professional High-Resolution Computer Use</a> · <a href="https://huggingface.co/datasets/likaixin/ScreenSpot-Pro">dataset</a></li>
+<li>Yang et al., <a href="https://arxiv.org/abs/2310.11441">Set-of-Mark Prompting Unleashes Extraordinary Visual Grounding in GPT-4V</a></li>
+<li>Lu et al., <a href="https://arxiv.org/abs/2408.00203">OmniParser for Pure Vision Based GUI Agent</a></li>
+<li>Anthropic, <a href="https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/computer-use-tool">Computer use tool docs</a> (scaling guidance)</li>
+<li>OpenAI, <a href="https://openai.com/index/computer-using-agent/">Computer-Using Agent</a> (Jan 2025; OSWorld 38.1%, WebArena 58.1%)</li>
+<li><a href="https://github.com/njucckevin/SeeClick">SeeClick repo</a> (ScreenSpot size, [0,1] coordinate format)</li>
+<li><a href="https://github.com/QwenLM/Qwen3-VL/issues/1486">Qwen3-VL issue #1486</a> (0–1000 relative coordinates, maintainer answer)</li>
+</ul>
+
+<script>
+const S=document.getElementById('screen'),out=document.getElementById('out'),gt=document.getElementById('dGT'),pd=document.getElementById('dP');
+const p=s=>s.split('x').map(Number);
+document.getElementById('real').onchange=e=>document.getElementById('rs').textContent=e.target.value.replace('x','×');
+S.onclick=e=>{const r=S.getBoundingClientRect();const fx=(e.clientX-r.left)/r.width,fy=(e.clientY-r.top)/r.height;
+const [RW,RH]=p(real.value),[MW,MH]=p(model.value),bug=document.getElementById('bug').value;
+const tgt=document.elementsFromPoint(e.clientX,e.clientY).find(x=>x.dataset&&x.dataset.n);
+// model sees image resized to MW x MH; with "aspect" bug, image is letterboxed preserving aspect
+let mx=fx*MW,my=fy*MH,note='';let sx,sy;
+if(bug==='ok'){sx=mx/MW*RW;sy=my/MH*RH;}
+else if(bug==='none'){sx=mx;sy=my;note='Harness used model-space coords as screen pixels.';}
+else{const s=Math.min(MW/RW,MH/RH),cw=RW*s,ch=RH*s,ox=(MW-cw)/2,oy=(MH-ch)/2;mx=ox+fx*cw;my=oy+fy*ch;sx=mx/MW*RW;sy=my/MH*RH;note='Image was letterboxed (padding '+ox.toFixed(0)+','+oy.toFixed(0)+'px) but harness scaled naively.';}
+const px=sx/RW,py=sy/RH;
+gt.style.display=pd.style.display='block';gt.style.left=fx*100+'%';gt.style.top=fy*100+'%';pd.style.left=Math.min(px,1)*100+'%';pd.style.top=Math.min(py,1)*100+'%';
+const err=Math.hypot(sx-fx*RW,sy-fy*RH);
+out.textContent=`Target: ${tgt?tgt.dataset.n:'(background)'}
+Normalized (truth):   (${fx.toFixed(3)}, ${fy.toFixed(3)})
+Real-screen pixels:   (${(fx*RW).toFixed(0)}, ${(fy*RH).toFixed(0)})  on ${RW}×${RH}
+Model output (px):    click(${mx.toFixed(0)}, ${my.toFixed(0)})  in ${MW}×${MH} input
+Executed click:       (${sx.toFixed(0)}, ${sy.toFixed(0)})   error = ${err.toFixed(0)} px
+${note}${err>20?'  ✗ Likely a miss.':'  ✓ On target.'}`;};
+const Q=[
+["Why is coordinate prediction as text inherently awkward for a standard cross-entropy loss?",["Digits are out of vocabulary","Token CE doesn't encode numeric distance: 499 vs 500 is penalized like 900 vs 500","Coordinates can't be normalized","It requires an accessibility tree"],1,"CE treats tokens as categories; near-miss numbers get no partial credit, motivating location bins, regression heads, or distance-aware RL rewards."],
+["Model input 1280×800, real screen 2560×1600, model outputs click(640,400). Correct screen click?",["(640,400)","(1280,800)","(320,200)","(0.5,0.5)"],1,"Scale by 2 in each axis: (1280,800). (0.5,0.5) is the normalized coordinate, not the pixel click."],
+["Main advantage of Set-of-Marks / a11y element IDs?",["Works on any canvas app","Exact click targets without coordinate regression","No preprocessing","Smaller context always"],1,"Picking an ID maps to a known box; but it depends on a detector or a11y tree being available and correct."],
+["Why did models score far lower on ScreenSpot-Pro than on ScreenSpot?",["Non-English only","High-res professional screens with tiny targets and complex layouts","Only mobile screenshots","No ground-truth boxes"],1,"ScreenSpot-Pro uses authentic high-res pro-app screenshots; downscaling makes targets tiny. Best baseline at release was 18.9%."],
+["You letterbox a 16:9 screenshot into a 4:3 model input but rescale outputs by simple width/height ratios. Symptom?",["Random clicks","A systematic offset along the padded axis","No effect","Only text targets fail"],1,"Padding shifts the image origin; forgetting to subtract it produces a consistent offset/squash on that axis."],
+["Which technique specifically helps with tiny targets on huge screens without retraining?",["Lower temperature","Coarse-to-fine cropping / visual search (e.g. ScreenSeekeR)","Larger vocabulary","Removing the system prompt"],1,"Narrowing the search area and re-grounding at higher effective resolution raised ScreenSpot-Pro accuracy to 48.1% training-free."],
+["On macOS Retina, screenshots are 2× logical points. Clicking APIs expect points. What breaks?",["Nothing","Clicks land at 2× the intended coordinates unless you divide by the backing scale","Only keyboard input","Screenshots become grayscale"],1,"HiDPI mismatch between physical pixels and logical points is a classic production grounding bug."],
+["Cheapest large-scale source of grounding training data?",["Hand-labeled desktop screenshots","Rendered web pages with DOM element boxes and text/aria labels","Video games","OCR on PDFs"],1,"Web rendering yields millions of (screenshot, expression, box) triples cheaply; SeeClick, UGround and OS-Atlas all lean on it."]];
+Q.forEach(q=>{const c=q[1][q[2]];const o=q[1].slice();for(let i=o.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[o[i],o[j]]=[o[j],o[i]];}q[1]=o;q[2]=o.indexOf(c);});
+let sc=0,ans=0;const qz=document.getElementById('quiz');
+Q.forEach((q,i)=>{const d=document.createElement('div');d.className='q card';d.innerHTML=`<b>Q${i+1}. ${q[0]}</b>`;const ex=document.createElement('div');ex.className='exp';
+q[1].forEach((o,j)=>{const b=document.createElement('button');b.textContent=o;b.onclick=()=>{if(d.dataset.done)return;d.dataset.done=1;ans++;
+if(j===q[2]){b.className='ok';sc++;}else{b.className='bad';d.querySelectorAll('button')[q[2]].className='ok';}
+ex.textContent=(j===q[2]?'✓ Correct. ':'✗ Not quite. ')+q[3];document.getElementById('score').textContent=`Score: ${sc}/${ans} answered (of ${Q.length})`;};d.appendChild(b);});
+d.appendChild(ex);qz.appendChild(d);});
+</script></body></html>

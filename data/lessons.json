@@ -1,1 +1,72 @@
-{"lessons": []}
+{
+  "lessons": [
+    {
+      "date": "2026-10-11",
+      "slug": "screen-grounding",
+      "title": "How computer-use agents ground actions to screen coordinates",
+      "tags": [
+        "fundamentals"
+      ],
+      "summary": "How VLM agents turn instructions into screen clicks: element IDs vs coordinate tokens, normalized vs pixel coords, rescaling pitfalls, key models, ScreenSpot benchmarks, and practical tips.",
+      "minutes": 15,
+      "path": "lessons/2026-10-11-screen-grounding.html",
+      "cards": [
+        {
+          "q": "Model input is 1280x800, real screen 2560x1600; model outputs click(640,400). Where should the harness click?",
+          "choices": [
+            "(640,400)",
+            "(1280,800)",
+            "(320,200)",
+            "(0.5,0.5)"
+          ],
+          "a": "(1280,800)",
+          "explanation": "Scale each axis by real/model size (x2). (0.5,0.5) is the normalized point, not pixels."
+        },
+        {
+          "q": "Why is plain token cross-entropy awkward for coordinate prediction?",
+          "a": "It treats numbers as categories, so near misses (499 vs 500) get no partial credit; distance-aware rewards or location bins help.",
+          "explanation": "Motivates RL with hit/distance rewards for grounding."
+        },
+        {
+          "q": "Main advantage and main weakness of Set-of-Marks / accessibility-tree element IDs?",
+          "a": "Exact clicks via ID-to-box mapping, but depends on a detector or a11y tree that may be missing (canvas apps, remote desktops)."
+        },
+        {
+          "q": "Why do models score far lower on ScreenSpot-Pro than ScreenSpot?",
+          "choices": [
+            "Non-English instructions only",
+            "High-res professional apps with tiny targets",
+            "Mobile-only screenshots",
+            "Missing ground truth"
+          ],
+          "a": "High-res professional apps with tiny targets",
+          "explanation": "Best baseline at release was 18.9% (OS-Atlas-7B); ScreenSeekeR visual search reached 48.1% training-free."
+        },
+        {
+          "q": "What coordinate format does Qwen2-VL/Qwen3-VL use for grounding?",
+          "a": "Relative coordinates on a 0-1000 grid; pixel = value/1000 x image size.",
+          "explanation": "Resolution-invariant, unlike absolute pixel outputs."
+        },
+        {
+          "q": "You letterbox a 16:9 screenshot into a 4:3 input but rescale with simple width/height ratios. Symptom?",
+          "choices": [
+            "Random clicks",
+            "Systematic offset along the padded axis",
+            "No effect",
+            "Only text targets fail"
+          ],
+          "a": "Systematic offset along the padded axis",
+          "explanation": "Subtract padding before scaling."
+        },
+        {
+          "q": "Training-free technique to improve grounding of tiny targets on huge screens?",
+          "a": "Coarse-to-fine cropping / visual search: predict a region, crop, re-ground at higher effective resolution."
+        },
+        {
+          "q": "Cheapest large-scale source of GUI grounding training data?",
+          "a": "Rendered web pages with DOM element boxes and text/aria labels (used by SeeClick, UGround, OS-Atlas)."
+        }
+      ]
+    }
+  ]
+}
