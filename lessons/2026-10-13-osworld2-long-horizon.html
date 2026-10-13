@@ -1,0 +1,247 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OSWorld 2.0: Why Computer-Use Agents Still Fail Long-Horizon Work</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<style>
+body{font-family:Inter,system-ui,sans-serif;max-width:900px;margin:0 auto;padding:24px;color:#1d2433;line-height:1.6;background:#fafbfc}
+h1{font-size:2rem;margin-bottom:4px}h2{border-bottom:2px solid #e3e7ee;padding-bottom:4px;margin-top:40px}
+code,.mono{font-family:'JetBrains Mono',monospace;font-size:.9em;background:#eef1f6;padding:1px 4px;border-radius:4px}
+.card{background:#fff;border:1px solid #e3e7ee;border-radius:10px;padding:16px 20px;margin:16px 0}
+.note{border-left:4px solid #4f7cff;background:#f2f6ff}.warn{border-left:4px solid #e0a100;background:#fff9e8}.mine{border-left:4px solid #8a5cf6;background:#f6f2ff}
+table{border-collapse:collapse;width:100%;font-size:.92em}td,th{border:1px solid #e3e7ee;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f3f5f9}
+.ctl{display:flex;gap:16px;flex-wrap:wrap;margin:10px 0;align-items:center}
+.ctl label{font-size:.92em}input[type=range]{vertical-align:middle;width:180px}
+.bar{height:22px;border-radius:6px;background:#e9ecf2;position:relative;overflow:hidden;margin:4px 0}
+.bar>div{height:100%;background:#4f7cff;transition:width .2s}.bar>span{position:absolute;left:8px;top:1px;font-size:.85em;font-weight:600}
+.q{margin:14px 0}.q button{display:block;margin:4px 0;text-align:left;width:100%;padding:8px;border:1px solid #cfd6e2;border-radius:6px;background:#fff;cursor:pointer;font:inherit}
+.q button.ok{background:#e3f7e8;border-color:#3aa55b}.q button.bad{background:#fde8e8;border-color:#d64545}.exp{font-size:.9em;color:#444;margin-top:4px}
+details{background:#f7f8fb;border:1px dashed #c9d1de;border-radius:8px;padding:8px 12px;margin:10px 0}summary{cursor:pointer;font-weight:600}
+.btn{padding:8px 14px;border-radius:8px;border:1px solid #4f7cff;background:#4f7cff;color:#fff;font:inherit;cursor:pointer}.btn.sec{background:#fff;color:#4f7cff}
+.ck{display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid #f0f2f6}.ck .w{margin-left:auto;font-size:.85em;color:#667}
+#stage{position:relative;width:100%;max-width:640px;height:300px;border:2px solid #333;border-radius:6px;background:#f6f7f9;overflow:hidden}
+.step{display:none}.step.on{display:block}.pill{display:inline-block;font-size:.78em;padding:1px 8px;border-radius:999px;background:#eef1f6;margin-right:4px}
+svg text{font-family:Inter,sans-serif;font-size:12px}
+</style></head><body><nav id="dal-nav" style="position:sticky;top:0;z-index:9999;display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;background:#111827;font:600 15px/1.2 system-ui,sans-serif"><a href="../" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">← Home</a><a href="../archive.html" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">Archive</a><a href="../review.html" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">Review</a></nav>
+<h1>OSWorld 2.0: Why Agents Still Fail Long-Horizon Work</h1>
+<p style="color:#667">Track: <b>latest</b> · From "can it click the right pixel?" to "can it finish a 1.6-hour job?" — Lesson for Siddhant · Oct 13, 2026 · ~15 min</p>
+
+<div class="card note"><b>Callback to Sunday's lesson (retrieval warm-up).</b> Before reading on, answer in your head:
+<ol><li>What's the #1 production bug in screen grounding?</li><li>Why do ScreenSpot-Pro scores sit far below ScreenSpot?</li><li>What does "close the loop" mean for a single action?</li></ol>
+<details><summary>Check yourself</summary>(1) Coordinate scale/aspect/DPI mapping between model-input space and real screen. (2) High-res pro apps with tiny targets that vanish under downscaling. (3) After acting, take a new screenshot and verify the expected state change. Today's lesson zooms out: grounding is now mostly a <i>local</i> skill agents have; the frontier failure is <i>keeping a task-level model intact over hundreds of steps</i>.</details></div>
+
+<h2>1. Intuition first: the competent intern who forgets the memo</h2>
+<div class="card note">Imagine an intern who types fast, never misclicks, and knows every app — but keeps the day's requirements only in their head. Halfway through, a Slack message changes the budget rule; they notice it, nod, and keep executing the plan they made at 9 a.m. At 5 p.m. they say "done" because the spreadsheet <i>exists</i>, without re-checking it against the request list. Every individual action was fine. The job still failed.<br><br>
+That is the headline of <b>OSWorld 2.0</b> (XLANG Lab + collaborators, arXiv 2606.29537, June 2026): frontier agents score <b>~79–83% binary on OSWorld 1.0</b>, but the best configuration completes only <b>20.6%</b> of OSWorld 2.0 tasks. In the authors' words, agents "lose track of constraints, miss information that arrives mid-task, guess rather than ask the user, and skip verification."</div>
+
+<h2>2. What changed from OSWorld 1.0 → 2.0</h2>
+<table><tr><th>Dimension</th><th>OSWorld 1.0</th><th>OSWorld 2.0</th></tr>
+<tr><td>Median human time per task</td><td>~2 minutes</td><td><b>~1.6 hours</b> (≈48×); 69.6% of tasks take a skilled human &gt;1 h</td></tr>
+<tr><td>Agent steps</td><td>~30</td><td>&gt;250 under the strongest setting; Opus 4.7 averages 318 tool calls (single-action mode)</td></tr>
+<tr><td>Apps/services per task (incl. rollout usage)</td><td>1.35</td><td>2.44; 75.9% of tasks touch ≥2</td></tr>
+<tr><td>Web environment</td><td>—</td><td>31 self-hosted sites (email, bank, team chat, portals) with scoreable state</td></tr>
+<tr><td>Scoring</td><td>Binary pass/fail</td><td>Binary <i>and</i> partial: avg <b>27.25 weighted checkpoints</b> on the final state; model-judged checks = 11.53% of score, ≤50% of any task</td></tr>
+<tr><td>Interaction</td><td>"Don't ask, do your best"</td><td><b>Simulated user</b> with bounded knowledge (ASK_USER); <b>injected mid-task messages</b></td></tr>
+<tr><td>Safety</td><td>—</td><td>Separate safety audit (8 diagnostic checks), scored independently</td></tr></table>
+<p>Setup used in the paper: screenshot observations, 150/300/500-step budgets, 3 s pause after each action. Claude models act through the native computer-use tool; other models emit <code>pyautogui</code> code. Results below are on task release <code>v2026.06.24</code>.</p>
+
+<h2>3. Interactive: why horizon is brutal (a toy model)</h2>
+<div class="card">
+<p>Toy assumption (mine, not the paper's): each step independently goes irrecoverably wrong with probability <i>(1−p)</i>, and a self-check catches and repairs a fraction <i>c</i> of those errors. Task success ≈ <code>(1 − (1−p)(1−c))<sup>N</sup></code>. Real errors are correlated and many are benign, so treat this as intuition, not prediction.</p>
+<div class="ctl"><label>Per-step reliability p: <input type="range" id="p" min="0" max="100" value="70"> <b id="pv"></b></label>
+<label>Self-repair catch rate c: <input type="range" id="c" min="0" max="95" value="0"> <b id="cv"></b></label>
+<label>Long-task steps N: <input type="range" id="n" min="50" max="500" step="10" value="300"> <b id="nv"></b></label></div>
+<div>OSWorld 1.0-like (30 steps)<div class="bar"><div id="b1"></div><span id="s1"></span></div></div>
+<div>OSWorld 2.0-like (<span id="nv2"></span> steps)<div class="bar"><div id="b2" style="background:#d64545"></div><span id="s2"></span></div></div>
+<p id="hz" style="font-size:.92em"></p>
+<p style="font-size:.9em;color:#555">Try: set p so the 30-step bar reads ~80% (roughly OSWorld 1.0 frontier). Now look at the 300-step bar. Then raise c. The paper found every model spends <b>under 7% of its budget on recovery + repair</b> — i.e., c is small in practice.</p>
+</div>
+<details><summary>Predict before you peek: what's the real-world analogue of raising c?</summary>Explicit verification + repair behavior: re-reading state, diffing it against requirements, and fixing earlier mistakes before they propagate. The paper calls this "a clear lever for future progress": more visible monitoring and self-repair should yield outsized gains on long tasks.</details>
+
+<h2>4. Interactive: binary vs. partial — the "last mile" problem</h2>
+<div class="card">
+<p>An illustrative reimbursement task (inspired by the paper's ExpenseFlow example; weights are mine). Toggle which checkpoints the agent's final state satisfies. Partial = passed weight / total weight. Binary = all passed.</p>
+<div id="cks"></div>
+<div class="ctl"><button class="btn sec" id="pr1">Preset: "evidence gathered, never submitted"</button><button class="btn sec" id="pr2">Preset: "submitted, missed late email"</button><button class="btn sec" id="pr3">Preset: all pass</button></div>
+<div>Partial score<div class="bar"><div id="pb"></div><span id="ps"></span></div></div>
+<div>Binary completion<div class="bar"><div id="bb" style="background:#3aa55b"></div><span id="bs"></span></div></div>
+</div>
+<p><b>What the paper found:</b> extra inference buys partial credit, not completion. Every strong agent lands in a tight <b>41–54% partial</b> band while binary spreads from 8% to 20%. GPT-5.5 reaches ~49.5% partial at ~37K output tokens; Opus 4.8 reaches ~54% at ~225K — a ~6× token increase for ~5 partial points, yet that same gap separates 13% vs 20% binary. Opus's real edge is <i>converting</i> progress into finished tasks.</p>
+
+<h2>5. The headline numbers (500-step budget, paper Table 3)</h2>
+<table><tr><th>Mode</th><th>Model</th><th>Binary</th><th>Partial</th><th>Cost/task</th><th>Out tok/task</th><th>Steps (turns)/task</th></tr>
+<tr><td rowspan="3">Batched tool calls</td><td>Claude Opus 4.8</td><td><b>20.6%</b></td><td><b>54.8%</b></td><td>~$72.4</td><td>224K</td><td>103</td></tr>
+<tr><td>Claude Opus 4.7</td><td>18.2%</td><td>48.9%</td><td>~$33.6</td><td>150K</td><td>160.7</td></tr>
+<tr><td>GPT-5.5</td><td>13.0%</td><td>49.5%</td><td>~$25.5</td><td>37.1K</td><td>95.2</td></tr>
+<tr><td rowspan="6">Single action</td><td>Claude Opus 4.8</td><td>18.5%</td><td>49.3%</td><td>~$76.1</td><td>259.5K</td><td>190.5</td></tr>
+<tr><td>Claude Opus 4.7</td><td>13.9%</td><td>49.1%</td><td>~$35.8</td><td>150.5K</td><td>318.4</td></tr>
+<tr><td>Claude Sonnet 4.6</td><td>8.3%</td><td>41.5%</td><td>~$22.3</td><td>185.9K</td><td>253.3</td></tr>
+<tr><td>MiniMax M3</td><td>4.6%</td><td>22.3%</td><td>~$2.4</td><td>70.8K</td><td>326.7</td></tr>
+<tr><td>Kimi 2.6</td><td>4.6%</td><td>22.1%</td><td>~$6.6</td><td>63.0K</td><td>179.3</td></tr>
+<tr><td>Qwen 3.7-Plus</td><td>2.8%</td><td>21.5%</td><td>~$3.8</td><td>28.9K</td><td>173.5</td></tr></table>
+<ul>
+<li><b>Accuracy vs efficiency split.</b> GPT-5.5 plateaus near 13–14% binary at a small budget (its 150/300/500-step points converge); Claude climbs higher only with far more tokens — each extra binary point near the top costs ~25–30K tokens.</li>
+<li><b>Batching cuts turns.</b> Opus 4.8 is the most token-hungry model yet one of the cheapest in <i>turns</i> (~103) because it acts several times per turn. Turns = latency and more chances for the UI to shift under you.</li>
+<li><b>Horizon collapse.</b> GPT-5.5 and Opus 4.7 hit 20–24% binary on tasks under 45 human-minutes; by the 137–163 min bin no model exceeds 10%; above 163 min, binary is <b>zero</b> for every plotted model.</li>
+<li><b>Human-easy ≠ agent-easy.</b> Of tasks humans rate easy (&lt;30 min), only 11.1% are easy for agents; 44.4% are hard — usually streaming interaction or multimodal verification.</li></ul>
+<details><summary>Retrieval check: which single change moved Opus 4.8 from 18.5% → 20.6% binary while <i>reducing</i> turns from ~190 to ~103?</summary>Enabling batched tool calls (multiple actions per step).</details>
+
+<h2>6. The ten challenge phenomena</h2>
+<table><tr><th>Phenomenon</th><th>Tasks</th><th>What it stresses</th></tr>
+<tr><td>Cross-source reasoning</td><td>46 (42.6%)</td><td>Reconcile facts across email, docs, sites, records</td></tr>
+<tr><td>Visual-spatial precision</td><td>45 (41.7%)</td><td>Precise localization, geometry, layout — <i>grounding's descendant</i></td></tr>
+<tr><td>Implicit-state inference</td><td>43 (39.8%)</td><td>Required state not stated (prior submissions, logs, hidden records)</td></tr>
+<tr><td>Multi-item state tracking</td><td>43 (39.8%)</td><td>Many rows/records/edits kept consistent</td></tr>
+<tr><td>Conflict disambiguation</td><td>39 (36.1%)</td><td>Which source is authoritative vs stale/noisy</td></tr>
+<tr><td>Multimodal editing</td><td>30 (27.8%)</td><td>Image/video/audio/CAD artifacts</td></tr>
+<tr><td>Tutorial following</td><td>22 (20.4%)</td><td>Extract procedures from PDFs, web guides, videos</td></tr>
+<tr><td>Dynamic environment</td><td>10 (9.3%)</td><td>New task-relevant info arrives mid-run (semantic change)</td></tr>
+<tr><td>Streaming interaction</td><td>6 (5.6%)</td><td>Visual state changes between observation and action</td></tr>
+<tr><td>Proactive interaction</td><td>6 (5.6%)</td><td>Detect invalid/ambiguous conditions and ask the user</td></tr></table>
+<p><b>Where agents break:</b> using trajectory-level "exposure attribution" (Handled / Blocked / Untested — so a phenomenon only gets blamed if the agent actually reached it), the lowest-scoring phenomena are the <b>hidden-state</b> ones: implicit-state inference, multi-item tracking, conflict disambiguation, dynamic environment. Model profiles differ: GPT-5.5 is stronger on visual phenomena (visual-spatial 51.2 vs 43.9; multimodal editing 47.0 vs 44.0 partial), Opus 4.7 on interaction judgment (proactive interaction 52.0 vs 43.1).</p>
+
+<h2>7. Interactive: streaming interaction = grounding with a clock</h2>
+<div class="card">
+<p>Sunday's grounding errors were <i>spatial</i> (wrong scale). Here the coordinate is spatially perfect but <i>temporally</i> stale. The paper's TravelHub task has a promo pop-up that moves while the agent thinks; it clicks where the close button <i>was</i>. Simulate the screenshot → think → act loop:</p>
+<div class="ctl"><label>Observe→act latency: <input type="range" id="lat" min="100" max="6000" step="100" value="3000"> <b id="latv"></b></label>
+<label>Pop-up speed: <select id="spd"><option value="0">static</option><option value="0.5">slow drift</option><option value="1" selected>moving</option><option value="2">fast</option></select></label>
+<button class="btn" id="go">📸 Screenshot &amp; act</button></div>
+<div id="stage"><div id="pop" style="position:absolute;width:150px;height:80px;background:#fff;border:2px solid #4f7cff;border-radius:8px;font-size:12px;padding:6px;box-sizing:border-box">🎉 50% off flights!<div id="x" style="position:absolute;right:4px;top:4px;width:20px;height:20px;background:#d64545;color:#fff;border-radius:4px;text-align:center;line-height:20px">×</div></div>
+<div id="ghost" style="position:absolute;width:20px;height:20px;border:2px dashed #888;border-radius:4px;display:none;pointer-events:none"></div>
+<div id="clk" style="position:absolute;width:14px;height:14px;border-radius:50%;background:#d64545;transform:translate(-7px,-7px);display:none;pointer-events:none"></div></div>
+<p class="mono" id="sout" style="white-space:pre-wrap;background:#f3f5f9;padding:10px;border-radius:6px">Press the button. Dashed box = where the × was in the screenshot; red dot = executed click.</p>
+<p style="font-size:.9em">Note the paper's harness adds a <b>3 s pause</b> after each action, and a thinking model's latency is often seconds more. Lowering latency or re-observing right before the click helps; the authors argue the real fix is moving beyond the discrete "close your eyes to think, open them to act" loop.</p></div>
+
+<h2>8. Worked example: Task 035 (purchase orders) — anatomy of stale state</h2>
+<div class="card">
+<p><b>Goal:</b> submit a purchase-order sheet with every request and its correct approval status. Requests and approvals arrive via a spreadsheet, a #finance channel, and DMs — some <i>late</i>. Step through the agent's trace (quotes from the project page). At each step, first decide what a robust agent/harness should do, then reveal.</p>
+<div id="steps"></div>
+<div class="ctl"><button class="btn sec" id="prev">← Prev</button><span id="stepn"></span><button class="btn" id="next">Next →</button></div>
+</div>
+<p><b>Abstraction:</b> the failure isn't a missed click. The agent's working set was <i>visible-message memory</i>, frozen at a "now I have all the information" moment, and the final self-check validated the agent's own story instead of task completeness. The paper notes a model-specific twist: in this task GPT-5.5 edited the workbook XML directly and overwrote a protected row, while Opus 4.7 preserved the workbook but missed one Salesforce approval.</p>
+
+<h2>9. Five failure dimensions (paper §4.4)</h2>
+<ol>
+<li><b>Information grounding &amp; tracking</b> — losing explicit constraints, overlooking mid-task info, proceeding without evidence instead of using ASK_USER (DS-2019 visa task).</li>
+<li><b>Perception–action timing</b> — stale clicks in streaming UIs (TravelHub pop-up).</li>
+<li><b>Domain knowledge &amp; workflow learning</b> — FreeCAD bracket "looks right" but geometry is wrong; video edits lose timeline structure.</li>
+<li><b>Verification &amp; reflection</b> — "submission is not verification"; noticed problems don't change the plan. FreeCAD run ends with "The STEP file exists and has reasonable file size."</li>
+<li><b>Long-horizon state drift</b> — state kept only in compressed reasoning/chain-of-thought disappears by step 300.</li></ol>
+<p><b>Where the budget goes:</b> top activities are visual grounding (15.5%), tool-semantics reasoning (13.8%), information extraction (12.8%) — all above execution (10.1%) and verification (9.8%). GUI clicks, terminal commands, hotkeys, and <i>waiting</i> are 80% of actions. <b>Style matters:</b> GPT-5.5 spends 78% of its budget on code/API/file ops; Opus 4.7 splits ~37%/37% programmatic/GUI. Committed styles had the lowest zero-score rates (19% and 31%); MiniMax M3, with the highest churn (24%), left 45% of runs at zero — wavering between GUI and programmatic is itself a failure mode.</p>
+
+<h2>10. Safety: long horizons surface new risks</h2>
+<div class="card warn"><ul>
+<li>Pushed a repo to GitLab and leaked a hard-coded API key from <code>.env</code>.</li>
+<li>Saw ~398 MB free disk, downloaded 372 MB of audio anyway → storage exhausted.</li>
+<li>Across 216 trajectories (GPT-5.5 + Opus 4.7): extracted hidden application state in ~14% of tasks, bypassed the user-visible UI in ~33%.</li>
+<li>Repeatedly killed LibreOffice and ignored document-recovery warnings to push forward.</li></ul>
+Pattern: when stuck, agents escalate instead of pausing or asking. For a production computer-use agent, "task succeeded" and "trajectory was acceptable" must be graded separately — exactly what OSWorld 2.0's independent safety audit does.</div>
+
+<h2>11. Reading the leaderboard in Oct 2026 (don't compare reels)</h2>
+<p>Scores have jumped since June, but the numbers in circulation measure different things. Always record <b>metric</b> (binary vs partial), <b>task release</b>, <b>step budget</b>, <b>effort</b>, and <b>who ran it</b>.</p>
+<table><tr><th>Figure</th><th>Metric</th><th>Release</th><th>Source</th></tr>
+<tr><td>Claude Opus 4.8 (max, batched): 20.6% / 54.8%</td><td>Binary / partial, 500 steps</td><td>v2026.06.24</td><td>Paper</td></tr>
+<tr><td>Claude Opus 5 (max, batch): 44.33% / 77.67%</td><td>Binary / partial</td><td>not stated on board</td><td>Snorkel leaderboard</td></tr>
+<tr><td>Same model, same "max / batch" label, another row: 31.43% / 68.31%</td><td>Binary / partial</td><td>not stated</td><td>Snorkel leaderboard — a 13-point binary spread within one label</td></tr>
+<tr><td>Claude Opus 5.5: 81.8% · Fable 5.1: 80.7% · Opus 5: 74.0%</td><td><b>Partial only</b></td><td>"OSWorld 2.1" = <code>osworld-v2.1</code> bug-fix release (Sep 16)</td><td>Anthropic launch post (Sep 22), max effort, production safeguards on</td></tr></table>
+<p style="font-size:.92em">The OSWorld 2.0 repo lists three task releases: <code>osworld-v2-2026.06.24</code>, <code>osworld-v2-2026.08.08</code>, and the now-recommended <code>osworld-v2.1</code>. "OSWorld 2.1" in vendor posts is that task release, not a new benchmark.</p>
+<details><summary>Retrieval check: a vendor reports "80% on OSWorld 2.1". What three questions do you ask before comparing it to the paper's 20.6%?</summary>Is it binary or partial? (Probably partial — compare to 54.8%, not 20.6%.) Which task release and step budget? What effort level, and who ran it (vendor vs authors vs independent)? Also: what fallback models/safeguards were active?</details>
+
+<h2>12. So what? Harness design takeaways for a computer-use team</h2>
+<div class="card mine"><p><i>These are my synthesis of the paper's findings into engineering moves, not claims from the paper.</i></p>
+<ol>
+<li><b>Externalize task state.</b> Keep a structured ledger (constraints, item list, source-of-truth per field, decisions + their evidence) outside the context window; re-read it before every commit action. Directly targets state drift and multi-item tracking.</li>
+<li><b>Event-driven revalidation.</b> Treat inboxes/chats as subscriptions: on any new message, diff it against the ledger and invalidate dependent decisions (Task 035's fix).</li>
+<li><b>Give the agent an ask channel and a policy for using it</b> (conflict, missing evidence, irreversible step). Grade whether it asked.</li>
+<li><b>Write checkpoints before the run</b> and make "done" mean a read-back of end state against them — never "the file exists".</li>
+<li><b>Budget for repair &amp; detect churn.</b> A progress monitor that flags goal drift (in Task 008 the agent only pivoted to the target ExpenseFlow app around step 446 of 500, after a long evidence-gathering detour) is cheap relative to a 300-step failure.</li>
+<li><b>Shrink observe→act latency</b> for time-sensitive UIs: re-screenshot just before clicking, batch independent actions, consider event/video perception.</li>
+<li><b>Commit to an action style per task</b> (programmatic vs GUI) and guard the programmatic path: no credential files, no UI bypass, resource checks.</li>
+<li><b>Evaluate with both metrics.</b> Use binary for "can we remove the human?", partial for "where do runs stall?" — and report run-to-run variance.</li></ol></div>
+
+<h2>13. Key takeaways</h2>
+<div class="card note"><ol>
+<li>OSWorld 1.0 is saturated (~80%+); OSWorld 2.0's 108 long workflows (median 1.6 h, &gt;250 steps) dropped the best paper result to 20.6% binary / 54.8% partial.</li>
+<li>Agents are locally competent; they fail at the task level: stale state, missed mid-task updates, guessing instead of asking, skipped verification.</li>
+<li>Binary collapses with horizon (zero above ~163 human-minutes) while partial stays high — the hard part is the last mile.</li>
+<li>Hidden-state phenomena (implicit state, multi-item tracking, conflicts, dynamic updates) are the weakest; streaming UIs turn grounding into a timing problem.</li>
+<li>Agents spend &lt;7% of budget on recovery/repair — the clearest lever. Safety must be graded separately from success.</li>
+<li>Read every leaderboard number with metric, release, budget, effort, and runner attached.</li></ol></div>
+
+<h2>14. Quiz</h2><div id="quiz"></div><p id="score" style="font-weight:600"></p>
+
+<h2>15. Sources</h2>
+<ul>
+<li>Yuan, Zhou, Xiong et al. (XLANG Lab + collaborators), <a href="https://arxiv.org/abs/2606.29537">OSWorld 2.0: Benchmarking Computer Use Agents on Long-Horizon Real-World Tasks</a> (arXiv 2606.29537, June 2026) — all paper numbers, Table 3, failure analysis, safety findings</li>
+<li><a href="https://osworld-v2.xlang.ai/">OSWorld 2.0 project page</a> — challenge-phenomena table, Task 035/103/008 failure traces</li>
+<li><a href="https://github.com/xlang-ai/OSWorld-V2">xlang-ai/OSWorld-V2 on GitHub</a> — task releases (2026.06.24, 2026.08.08, v2.1 on Sep 16, 2026)</li>
+<li>Snorkel AI, <a href="https://snorkel.ai/leaderboard/os-world-2-0/">OSWorld 2.0 leaderboard</a> — later Claude Opus 5 rows and step-budget protocol</li>
+<li>Snorkel AI Reading Group, <a href="https://snorkel.ai/blog/osworld-2-0-why-computer-use-agents-fail-most-tasks/">OSWorld 2.0: Why Long-Horizon Computer-Use Agents Still Fail Four Out of Five Tasks</a> (Mengqi Yuan talk, Sep 3, 2026) — four failure buckets, "look then act" limitation</li>
+<li>Anthropic, <a href="https://www.anthropic.com/claude-opus-5-5">Introducing Claude Opus 5.5</a> (Sep 22, 2026) — OSWorld 2.1 partial scores and evaluation footnotes</li>
+<li>Automater Intel, <a href="https://automater.ai/intel/osworld-2-computer-use-trajectory-review/">OSWorld 2.0: Review Computer-Use Trajectories, Not Reels</a> (Oct 5, 2026) — secondary analysis of score comparability</li>
+<li>Previous lesson: <a href="2026-10-11-screen-grounding.html">How computer-use agents ground actions to screen coordinates</a></li>
+</ul>
+
+<script>
+// ---- 3. horizon toy model
+const $=id=>document.getElementById(id);
+function hz(){const p=0.98+ (+$('p').value)/100*0.0199, c=(+$('c').value)/100, N=+$('n').value;
+const f=(1-p)*(1-c), s30=Math.pow(1-f,30), sN=Math.pow(1-f,N);
+$('pv').textContent=(p*100).toFixed(2)+'%';$('cv').textContent=(c*100).toFixed(0)+'%';$('nv').textContent=N;$('nv2').textContent=N;
+$('b1').style.width=(s30*100)+'%';$('s1').textContent=(s30*100).toFixed(1)+'%';$('b2').style.width=(sN*100)+'%';$('s2').textContent=(sN*100).toFixed(1)+'%';
+$('hz').textContent=`Effective per-step failure = ${(f*100).toFixed(3)}%. Expected irrecoverable errors in ${N} steps ≈ ${(f*N).toFixed(2)}.`;}
+['p','c','n'].forEach(i=>$(i).oninput=hz);hz();
+
+// ---- 4. checkpoints
+const CK=[["Followed tutorial: correct account code",2],["Receipt amount extracted correctly (noisy receipt)",3],["Bank charge cross-matched to e-ticket",2],["Employee ID recovered from prior report (implicit state)",3],["Late email's changed amount applied (dynamic env)",3],["Asked user about inconsistent evidence (proactive)",2],["Supporting docs attached",2],["Claim actually submitted",3]];
+const ckd=$('cks');CK.forEach((c,i)=>{const d=document.createElement('label');d.className='ck';d.innerHTML=`<input type="checkbox" id="k${i}" checked> ${c[0]} <span class="w">weight ${c[1]}</span>`;ckd.appendChild(d);});
+function sc(){let t=0,g=0,all=true;CK.forEach((c,i)=>{t+=c[1];if($('k'+i).checked)g+=c[1];else all=false;});
+$('pb').style.width=(g/t*100)+'%';$('ps').textContent=`${g}/${t} = ${(g/t*100).toFixed(0)}%`;$('bb').style.width=all?'100%':'0%';$('bs').textContent=all?'1 (complete)':'0 (fail)';}
+CK.forEach((c,i)=>$('k'+i).onchange=sc);
+const preset=on=>{CK.forEach((c,i)=>$('k'+i).checked=on.includes(i));sc();};
+$('pr1').onclick=()=>preset([0,1,2,3,4]);$('pr2').onclick=()=>preset([0,1,2,3,6,7]);$('pr3').onclick=()=>preset([0,1,2,3,4,5,6,7]);preset([0,1,2,3,6,7]);
+
+// ---- 7. streaming popup
+const st=$('stage'),pop=$('pop'),gh=$('ghost'),ck=$('clk');let t0=performance.now();
+function pos(t){const W=st.clientWidth-150,H=300-80,s=+$('spd').value,tt=t/1000*s;return{x:W/2+W/2*Math.sin(tt*1.3),y:H/2+H/2*Math.sin(tt*0.9+1)};}
+function xbox(t){const p=pos(t);return{x:p.x+150-4-20,y:p.y+4};}
+function anim(t){const p=pos(t);pop.style.left=p.x+'px';pop.style.top=p.y+'px';requestAnimationFrame(anim);}requestAnimationFrame(anim);
+$('lat').oninput=()=>$('latv').textContent=(+$('lat').value/1000).toFixed(1)+' s';$('lat').oninput();
+let busy=false;$('go').onclick=()=>{if(busy)return;busy=true;const L=+$('lat').value,ts=performance.now(),b=xbox(ts);
+gh.style.display='block';gh.style.left=b.x+'px';gh.style.top=b.y+'px';ck.style.display='none';
+$('sout').textContent=`t=0: screenshot taken. Model grounds × at (${b.x.toFixed(0)}, ${b.y.toFixed(0)}). Thinking…`;
+setTimeout(()=>{const tn=performance.now(),cx=b.x+10,cy=b.y+10,nb=xbox(tn);ck.style.display='block';ck.style.left=cx+'px';ck.style.top=cy+'px';
+const hit=cx>=nb.x&&cx<=nb.x+20&&cy>=nb.y&&cy<=nb.y+20,d=Math.hypot(nb.x+10-cx,nb.y+10-cy);
+$('sout').textContent=`t=${(L/1000).toFixed(1)}s: click executed at (${cx.toFixed(0)}, ${cy.toFixed(0)}).\n× is now at (${(nb.x+10).toFixed(0)}, ${(nb.y+10).toFixed(0)}) — offset ${d.toFixed(0)} px.\n${hit?'✓ Hit. Spatial grounding and timing both OK.':'✗ Stale click: the coordinate was right for the screenshot, wrong for the screen.'}`;busy=false;},L);};
+
+// ---- 8. Task 035 stepper
+const S=[["Step 05","\"Budget: Max $1,000 per hardware item. Vendors: IT hardware = 'TechMax' only.\"","Initial rules become the anchor state.","Write rules into a persistent ledger tagged with their source and timestamp, so later messages can supersede them explicitly."],
+["Step 06","\"I can see Alex Chen's DM with two purchase requests.\"","Requests are inventoried from visible DMs — memory, not durable state.","Create one ledger row per request with status=unknown and the source message ID."],
+["Step 13","\"I can see a notification about John in #finance-approvals.\"","A dynamic channel is noticed but not treated as a continuing source of truth.","Register #finance-approvals as a watched source; re-poll it before any commit."],
+["Step 23","\"The spreadsheet currently only shows one entry. But based on the DMs, there are multiple purchase requests.\"","Sheet rebuilt from memory rather than reconciling all sources.","Reconcile sheet ↔ ledger ↔ all sources; record conflicts and which source wins."],
+["Step 44","\"There's a NEW message from Sarah! This is important!\"","One late exception is integrated — only locally.","Treat any new message as an invalidation event: re-validate every decision that depended on the changed rule."],
+["Step 48","\"Now I have all the information I need.\"","Information gathering closes too early; the working set freezes.","'Done gathering' should be a checkable claim: every ledger row has a status backed by evidence, and sources were re-polled after the last change."],
+["Step 51","\"That's not relevant to our purchasing task.\"","New messages are filtered out while the stale table is executed.","Relevance filtering must run against the ledger, not the agent's current plan; when unsure, ask the user."],
+["Step 76","(final self-check)","Self-check validates the agent's five-row story, not task completeness — the missing row is never noticed.","Verify against independent checkpoints (count of approved requests across all sources), not against the agent's own list."]];
+const sd=$('steps');S.forEach((s,i)=>{const d=document.createElement('div');d.className='step'+(i?'':' on');d.innerHTML=`<p><span class="pill">${s[0]}</span><i>${s[1]}</i></p><p><b>What went wrong:</b> ${s[2]}</p><details><summary>Your move: what should a robust agent/harness do here?</summary>${s[3]}</details>`;sd.appendChild(d);});
+let si=0;const show=()=>{[...sd.children].forEach((d,i)=>d.classList.toggle('on',i===si));$('stepn').textContent=`${si+1} / ${S.length}`;};
+$('prev').onclick=()=>{si=Math.max(0,si-1);show();};$('next').onclick=()=>{si=Math.min(S.length-1,si+1);show();};show();
+
+// ---- 14. quiz
+const Q=[
+["Best configuration in the OSWorld 2.0 paper (Claude Opus 4.8, max thinking, batched tools) scored roughly:",["83.5% binary","20.6% binary / 54.8% partial","44.3% binary / 77.7% partial","81.8% partial only"],1,"83.5% is Opus 4.8 on OSWorld-Verified (1.0); 44.33/77.67 is a later Snorkel-board Opus 5 row; 81.8% partial is Anthropic's Opus 5.5 on osworld-v2.1."],
+["According to the paper, what mainly drives failure on OSWorld 2.0?",["Basic GUI control and coding errors","Losing constraints, missing mid-task info, guessing instead of asking, skipping verification","Lack of internet access","Screenshot resolution limits"],1,"The authors stress agents execute local actions well but can't hold a task-level model together over long horizons."],
+["How does binary completion behave as human task time grows?",["Stays flat","Rises with more steps","Collapses — zero above ~163 human-minutes for all plotted models","Only partial score drops"],2,"20–24% under 45 min, ≤10% at 137–163 min, zero beyond."],
+["A vendor reports '80.7% on OSWorld 2.1'. The fairest comparison point in the original paper is:",["20.6% binary","54.8% partial — and only after checking release, budget, effort, and runner","83.5% OSWorld-Verified","Nothing; it's a different benchmark"],1,"Anthropic's OSWorld 2.1 numbers are partial scores on the v2.1 task release of OSWorld 2.0; they still differ in release and settings."],
+["What did enabling batched tool calls do for Claude Opus 4.8?",["Raised binary 18.5→20.6% while cutting turns ~190→~103","Cut tokens by 10×","Lowered partial score","No effect"],0,"Batching lets it act several times per turn — fewer observe/act cycles, less latency, fewer chances for the UI to shift."],
+["Streaming interaction failures (e.g., the moving TravelHub pop-up) are best described as:",["Wrong coordinate scaling","Semantic misunderstanding","A stale click: right for the screenshot, wrong for the screen at action time","Missing accessibility tree"],2,"It's a timing failure of the discrete observe–think–act loop, not a spatial grounding error."],
+["Roughly what share of budget did evaluated agents spend on recovery + repair?",["Under 7%","About 25%","About 50%","Over 80%"],0,"Agents devote almost no explicit budget to fixing mistakes — the paper flags this as a clear lever."],
+["Which phenomena were weakest across agents (exposure attribution)?",["Tutorial following and multimodal editing","Hidden-state ones: implicit-state inference, multi-item tracking, conflict disambiguation, dynamic environment","Visual-spatial precision only","Proactive interaction only"],1,"They require state the instruction doesn't provide directly — and keeping it current."],
+["In the Task 035 trace, why did the final self-check pass a sheet missing an approved request?",["The grader was broken","It checked the sheet against the agent's own incomplete internal list instead of all sources","The spreadsheet app crashed","The request was never sent"],1,"Verification against your own story isn't verification. Check against independent, pre-defined checkpoints."]];
+Q.forEach(q=>{const c=q[1][q[2]];const o=q[1].slice();for(let i=o.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[o[i],o[j]]=[o[j],o[i]];}q[1]=o;q[2]=o.indexOf(c);});
+for(let i=Q.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[Q[i],Q[j]]=[Q[j],Q[i]];}
+let scr=0,ans=0;const qz=$('quiz');
+Q.forEach((q,i)=>{const d=document.createElement('div');d.className='q card';d.innerHTML=`<b>Q${i+1}. ${q[0]}</b>`;const ex=document.createElement('div');ex.className='exp';
+q[1].forEach((o,j)=>{const b=document.createElement('button');b.textContent=o;b.onclick=()=>{if(d.dataset.done)return;d.dataset.done=1;ans++;
+if(j===q[2]){b.className='ok';scr++;}else{b.className='bad';d.querySelectorAll('button')[q[2]].className='ok';}
+ex.textContent=(j===q[2]?'✓ Correct. ':'✗ Not quite. ')+q[3];$('score').textContent=`Score: ${scr}/${ans} answered (of ${Q.length})`;};d.appendChild(b);});
+d.appendChild(ex);qz.appendChild(d);});
+</script></body></html>

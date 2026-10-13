@@ -1,6 +1,77 @@
 {
   "lessons": [
     {
+      "date": "2026-10-13",
+      "slug": "osworld2-long-horizon",
+      "title": "OSWorld 2.0: Why computer-use agents still fail long-horizon work",
+      "tags": [
+        "latest"
+      ],
+      "summary": "OSWorld 2.0 (June 2026) moved computer-use evals from ~2-minute tasks to 1.6-hour workflows: best paper result 20.6% binary / 54.8% partial. Ten challenge phenomena, horizon collapse, stale-state and streaming failures, safety findings, how to read Oct 2026 leaderboard numbers, and harness design takeaways.",
+      "minutes": 15,
+      "path": "lessons/2026-10-13-osworld2-long-horizon.html",
+      "cards": [
+        {
+          "q": "OSWorld 2.0 paper's best result (Claude Opus 4.8, max thinking, batched tool calls, 500 steps)?",
+          "choices": [
+            "83.5% binary",
+            "20.6% binary / 54.8% partial",
+            "44.33% binary / 77.67% partial",
+            "81.8% partial"
+          ],
+          "a": "20.6% binary / 54.8% partial",
+          "explanation": "83.5% is Opus 4.8 on OSWorld-Verified (1.0); 44.33/77.67 is a later Snorkel-board Opus 5 row; 81.8% partial is Anthropic's Opus 5.5 on the osworld-v2.1 task release."
+        },
+        {
+          "q": "Name the four task-level failure patterns the OSWorld 2.0 authors highlight.",
+          "a": "Agents lose track of constraints, miss information that arrives mid-task, guess rather than ask the user, and skip verification.",
+          "explanation": "Not basic GUI control or coding: local actions are fine, the task-level model drifts."
+        },
+        {
+          "q": "How does OSWorld 2.0 scale vs 1.0 (human time, agent steps, scoring)?",
+          "a": "Median human time ~1.6 h vs ~2 min (~48x); >250 agent steps vs ~30; binary plus partial scoring over ~27.25 weighted final-state checkpoints per task.",
+          "explanation": "Also 31 self-hosted websites, a simulated user, injected mid-task messages, and a separate safety audit."
+        },
+        {
+          "q": "Why does a streaming UI (moving pop-up) break a correctly grounded click?",
+          "choices": [
+            "Coordinate scaling bug",
+            "The click is stale: right for the screenshot, wrong for the screen at action time",
+            "Missing accessibility tree",
+            "Wrong referring expression"
+          ],
+          "a": "The click is stale: right for the screenshot, wrong for the screen at action time",
+          "explanation": "A timing failure of the discrete screenshot-think-act loop; shrink observe-to-act latency or re-observe right before acting."
+        },
+        {
+          "q": "Which OSWorld 2.0 phenomena were weakest across agents?",
+          "a": "Hidden-state ones: implicit-state inference, multi-item state tracking, conflict disambiguation, and dynamic environment.",
+          "explanation": "They demand state the instruction does not give directly, and keeping it current as the task evolves."
+        },
+        {
+          "q": "Roughly what share of budget did agents spend on recovery + repair, and why does it matter?",
+          "choices": [
+            "Under 7%",
+            "About 25%",
+            "About 50%",
+            "Over 80%"
+          ],
+          "a": "Under 7%",
+          "explanation": "Errors compound over hundreds of steps; explicit monitoring and self-repair is flagged by the authors as a clear lever."
+        },
+        {
+          "q": "A vendor posts '80% on OSWorld 2.1'. What do you check before comparing it to the paper?",
+          "a": "Metric (binary vs partial), task release (osworld-v2.1 vs 2026.06.24/08.08), step budget, effort level, and who ran it (plus active safeguards/fallbacks).",
+          "explanation": "Anthropic's OSWorld 2.1 numbers are partial scores; compare to 54.8% partial, not 20.6% binary, and still with caveats. Snorkel's board shows a 13-point binary spread within one model/effort label."
+        },
+        {
+          "q": "Task 035 (purchase orders): why did the agent's final self-check miss an approved request?",
+          "a": "It froze its working set at 'now I have all the information' and checked the sheet against its own incomplete internal list instead of re-reconciling all sources after late messages.",
+          "explanation": "Fix: externalized task ledger, treat new messages as invalidation events, verify against independent checkpoints."
+        }
+      ]
+    },
+    {
       "date": "2026-10-11",
       "slug": "screen-grounding",
       "title": "How computer-use agents ground actions to screen coordinates",
