@@ -1,0 +1,317 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Temporal credit assignment: from REINFORCE to process rewards</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<style>
+body{font-family:Inter,system-ui,sans-serif;max-width:900px;margin:0 auto;padding:24px;color:#1d2433;line-height:1.6;background:#fafbfc}
+h1{font-size:2rem;margin-bottom:4px}h2{border-bottom:2px solid #e3e7ee;padding-bottom:4px;margin-top:40px}
+code,.mono{font-family:'JetBrains Mono',monospace;font-size:.9em;background:#eef1f6;padding:1px 4px;border-radius:4px}
+.card{background:#fff;border:1px solid #e3e7ee;border-radius:10px;padding:16px 20px;margin:16px 0}
+.note{border-left:4px solid #4f7cff;background:#f2f6ff}.warn{border-left:4px solid #e0a100;background:#fff9e8}.mine{border-left:4px solid #8a5cf6;background:#f6f2ff}
+table{border-collapse:collapse;width:100%;font-size:.92em}td,th{border:1px solid #e3e7ee;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f3f5f9}
+.ctl{display:flex;gap:16px;flex-wrap:wrap;margin:10px 0;align-items:center}
+.ctl label{font-size:.92em}input[type=range]{vertical-align:middle;width:180px}
+.bar{height:22px;border-radius:6px;background:#e9ecf2;position:relative;overflow:hidden;margin:4px 0}
+.bar>div{height:100%;background:#4f7cff;transition:width .2s}.bar>span{position:absolute;left:8px;top:1px;font-size:.85em;font-weight:600}
+.q{margin:14px 0}.q button{display:block;margin:4px 0;text-align:left;width:100%;padding:8px;border:1px solid #cfd6e2;border-radius:6px;background:#fff;cursor:pointer;font:inherit}
+.q button.ok{background:#e3f7e8;border-color:#3aa55b}.q button.bad{background:#fde8e8;border-color:#d64545}.exp{font-size:.9em;color:#444;margin-top:4px}
+details{background:#f7f8fb;border:1px dashed #c9d1de;border-radius:8px;padding:8px 12px;margin:10px 0}summary{cursor:pointer;font-weight:600}
+.btn{padding:8px 14px;border-radius:8px;border:1px solid #4f7cff;background:#4f7cff;color:#fff;font:inherit;cursor:pointer}.btn.sec{background:#fff;color:#4f7cff}
+.pill{display:inline-block;font-size:.78em;padding:1px 8px;border-radius:999px;background:#eef1f6;margin-right:4px}
+.step{display:none}.step.on{display:block}
+.eq{font-family:'JetBrains Mono',monospace;background:#f3f5f9;padding:12px 14px;border-radius:8px;overflow-x:auto;margin:10px 0;font-size:.88em;line-height:1.7}
+.credit-row{display:grid;grid-template-columns:40px 1fr 80px 80px 80px;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid #f0f2f6;font-size:.9em}
+.credit-row.head{font-weight:600;color:#555;border-bottom:2px solid #e3e7ee}
+.dotc{width:14px;height:14px;border-radius:50%;display:inline-block;vertical-align:middle;margin-right:4px}
+svg text{font-family:Inter,sans-serif;font-size:12px}
+</style></head><body><nav id="dal-nav" style="position:sticky;top:0;z-index:9999;display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;background:#111827;font:600 15px/1.2 system-ui,sans-serif"><a href="../" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">← Home</a><a href="../archive.html" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">Archive</a><a href="../review.html" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">Review</a></nav>
+<h1>Temporal credit assignment: from REINFORCE to process rewards</h1>
+<p style="color:#667">Track: <b>fundamentals</b> · Lesson for Siddhant · Oct 14, 2026 · ~15 min</p>
+
+<div class="card note"><b>Callback / retrieval warm-up.</b> Before reading on, answer in your head:
+<ol>
+<li>Yesterday (OSWorld 2.0): why do locally competent agents still fail 300+ step workflows? What fraction of budget went to recovery?</li>
+<li>Sunday (screen grounding): why can a perfect local click still leave the <i>task</i> failed?</li>
+<li>OSWorld 2.0 grades ~27 weighted final-state checkpoints — what does that buy you that binary pass/fail does not?</li>
+</ol>
+<details><summary>Check yourself</summary>(1) Errors compound; state drifts; agents spend &lt;7% of budget on recovery/repair. (2) Local action success ≠ task success — grounding gets the pixel right, but the trajectory can still miss constraints, mid-task updates, or verification. (3) Partial checkpoints give a denser signal about <i>where</i> progress stalled, not just whether the whole job finished. Today's lesson goes to first principles: <b>why sparse terminal rewards make long trajectories nearly unlearnable</b>, and how process/step rewards (and those checkpoints) reshape credit assignment.</details></div>
+
+<h2>1. Intuition first: who gets blamed at step 300?</h2>
+<div class="card note">
+Imagine a 300-step GUI episode. The agent clicks Save on the wrong spreadsheet at step 47, never notices, and at step 300 the grader says "fail." Under a <b>sparse terminal reward</b> — +1 if the final state passes, 0 otherwise — every action in the trajectory is multiplied by the same return. The wrong Save, the fifty correct clicks that followed, and the final verification skip all share identical credit (or blame). The learning signal cannot tell step 47 from step 280.
+<br><br>
+That is the <b>temporal credit assignment problem</b> (Sutton &amp; Barto): given delayed reward, which past actions caused the outcome? For computer-use agents, the delay is extreme — reward arrives after hundreds of observe–act cycles — so the problem is not a footnote; it is why RL on long GUI trajectories is hard even when grounding is solved.
+</div>
+
+<h2>2. Formal MDP for computer-use</h2>
+<p>Cast a computer-use episode as an MDP ⟨𝒮, 𝒜, P, R, γ⟩:</p>
+<ul>
+<li><b>State s<sub>t</sub></b>: screenshot I<sub>t</sub> plus (compressed) history — prior actions, ledger/constraints, tool results. Partial observability is real; we treat the agent's input as s<sub>t</sub>.</li>
+<li><b>Action a<sub>t</sub></b>: click(x,y), type(text), scroll, hotkey, or a tool call (bash, browser, ASK_USER). Discrete or continuous depending on the interface.</li>
+<li><b>Transition</b>: the OS/UI updates; the next screenshot is stochastic (animations, network, other apps).</li>
+<li><b>Reward</b> (classic sparse setup): r<sub>t</sub> = 0 for t &lt; T, and r<sub>T</sub> ∈ {0, 1} from a binary task grader. Optionally discount γ ∈ (0,1].</li>
+</ul>
+<p>Policy π<sub>θ</sub>(a|s) is the VLM/LLM agent (parameters θ). Objective:</p>
+<div class="eq">J(θ) = E<sub>τ ~ π<sub>θ</sub></sub>[ G<sub>0</sub> ] &nbsp; where &nbsp; G<sub>t</sub> = Σ<sub>k=t</sub><sup>T</sup> γ<sup>k−t</sup> r<sub>k</sub></div>
+<p>With sparse terminal reward and γ≈1, G<sub>t</sub> = r<sub>T</sub> for every t — a single Bernoulli that paints the whole trajectory.</p>
+
+<h2>3. REINFORCE: the gradient and why variance explodes</h2>
+<p>Williams (1992) showed that the policy gradient can be estimated from sampled trajectories without differentiating through the environment. Start from the likelihood-ratio identity:</p>
+<div class="eq">∇<sub>θ</sub> J(θ) = E<sub>τ</sub>[ ∇<sub>θ</sub> log p<sub>θ</sub>(τ) · G<sub>0</sub> ]</div>
+<p>For a Markov trajectory, log p<sub>θ</sub>(τ) = Σ<sub>t</sub> log π<sub>θ</sub>(a<sub>t</sub>|s<sub>t</sub>) + terms independent of θ (dynamics). Pushing the return inside the sum (causality: only future rewards after t matter) gives the familiar form:</p>
+<div class="eq">∇J(θ) = E[ Σ<sub>t=0</sub><sup>T</sup> ∇ log π<sub>θ</sub>(a<sub>t</sub>|s<sub>t</sub>) · G<sub>t</sub> ]</div>
+<p>Monte Carlo estimate from one episode: for each (s<sub>t</sub>, a<sub>t</sub>), add ∇ log π · G<sub>t</sub> to the gradient accumulator.</p>
+
+<div class="card warn"><b>Why variance explodes with horizon.</b>
+<ul>
+<li>Under sparse r<sub>T</sub> ∈ {0,1} and γ=1, G<sub>t</sub> = r<sub>T</sub> for all t. Every timestep's gradient is scaled by the <i>same</i> random bit.</li>
+<li>A random policy on a hard task succeeds with probability p ≪ 1. Most rollouts contribute 0; rare successes contribute +1 everywhere. The estimator is high-variance Bernoulli noise.</li>
+<li>Even with denser rewards, Var(G<sub>t</sub>) grows with the number of future reward terms (roughly like horizon for undiscounted sums of comparable noise). Long episodes → noisier G<sub>t</sub> → noisier policy updates.</li>
+<li>Credit is smeared: a bad early action and a good late action get the same G<sub>t</sub>, so the gradient cannot preferentially reinforce the right decisions.</li>
+</ul>
+Intuition for computer-use: if only 1 in 100 long rollouts succeed, REINFORCE waits for those rare +1s and then upweights <i>every</i> action in them — including the lucky mistakes that happened not to kill the episode.
+</div>
+
+<details><summary>Mini derivation: why a state-independent baseline does not bias the gradient</summary>
+E[∇ log π<sub>θ</sub>(a|s) · b(s)] = Σ<sub>a</sub> π(a|s) ∇ log π(a|s) · b(s) = b(s) ∇ Σ<sub>a</sub> π(a|s) = b(s) ∇(1) = 0.
+So subtracting any function of s alone (or a constant) leaves ∇J unbiased while typically cutting variance. That is the door to baselines and advantages below.
+</details>
+
+<h2>4. Interactive: horizon, discount, sparsity → learning signal</h2>
+<div class="card">
+<p>Toy model (mine, for intuition — not a theorem). Each step emits an independent reward with probability <i>sparsity</i> p<sub>r</sub> (else 0); when it fires, the magnitude is ±1 with equal chance. Return G<sub>0</sub> = Σ<sub>t=0</sub><sup>N−1</sup> γ<sup>t</sup> r<sub>t</sub>. We plot: (i) std of G<sub>0</sub> across rollouts, (ii) a crude "signal-to-noise" proxy |E[G<sub>0</sub>]| / (std(G<sub>0</sub>)+ε) when we inject a small systematic +δ bias on rewards (simulating a slightly better policy). Watch what happens as N grows and as you make rewards rarer.</p>
+<div class="ctl">
+<label>Horizon N: <input type="range" id="N" min="5" max="400" step="5" value="50"> <b id="Nv"></b></label>
+<label>Discount γ: <input type="range" id="g" min="50" max="100" value="99"> <b id="gv"></b></label>
+<label>Reward fire rate p<sub>r</sub>: <input type="range" id="pr" min="1" max="100" value="100"> <b id="prv"></b></label>
+</div>
+<div>Std of return G<sub>0</sub> (noise floor)<div class="bar"><div id="bstd" style="background:#d64545"></div><span id="sstd"></span></div></div>
+<div>Signal-to-noise with small policy improvement δ<div class="bar"><div id="bsnr" style="background:#3aa55b"></div><span id="ssnr"></span></div></div>
+<p id="vz" style="font-size:.92em"></p>
+<p style="font-size:.9em;color:#555">Try: set p<sub>r</sub>=100% (dense), N=30, γ≈1 — SNR is decent. Now set N=300 (OSWorld-scale) — std grows, SNR drops. Then set p<sub>r</sub>≈3% (almost terminal-only) — signal collapses. That is the sparse-reward / long-horizon trap in one widget.</p>
+</div>
+
+<h2>5. Baselines and advantage</h2>
+<p>Replace G<sub>t</sub> with an <b>advantage</b>:</p>
+<div class="eq">A<sub>t</sub> = G<sub>t</sub> − b(s<sub>t</sub>) &nbsp;≈&nbsp; G<sub>t</sub> − V<sup>π</sup>(s<sub>t</sub>)</div>
+<p>V<sup>π</sup>(s) = E[G<sub>t</sub> | s<sub>t</sub>=s] is the expected return from s. Then A<sub>t</sub> asks: <i>did this action do better or worse than average for this state?</i></p>
+<ul>
+<li><b>Unbiased:</b> as shown above, any b(s) (or constant) has expectation zero against ∇ log π.</li>
+<li><b>Lower variance:</b> G<sub>t</sub> and V(s<sub>t</sub>) are correlated; subtracting removes shared noise. A good baseline is the biggest free lunch in policy gradients.</li>
+<li><b>Still smeared under sparse rewards:</b> if G<sub>t</sub> = r<sub>T</sub> for all t, then A<sub>t</sub> = r<sub>T</sub> − V(s<sub>t</sub>). Early states with similar V still get nearly identical advantages when r<sub>T</sub> is the only signal — baselines help, but they do not invent intermediate credit.</li>
+</ul>
+<p>Actor-critic trains a critic V<sub>φ</sub> alongside the actor π<sub>θ</sub>, and uses V<sub>φ</sub>(s<sub>t</sub>) as the baseline (or bootstraps one-step TD: δ<sub>t</sub> = r<sub>t</sub> + γ V(s<sub>t+1</sub>) − V(s<sub>t</sub>)).</p>
+
+<h2>6. GAE intuition (λ-return) — without a full PPO tutorial</h2>
+<p>Schulman et al. (2016) introduced <b>Generalized Advantage Estimation</b>. Define the TD residual δ<sub>t</sub> = r<sub>t</sub> + γ V(s<sub>t+1</sub>) − V(s<sub>t</sub>). Then:</p>
+<div class="eq">Â<sub>t</sub><sup>GAE(γ,λ)</sup> = Σ<sub>l=0</sub><sup>∞</sup> (γλ)<sup>l</sup> δ<sub>t+l</sub></div>
+<ul>
+<li><b>λ = 0:</b> Â<sub>t</sub> = δ<sub>t</sub> — pure 1-step TD. Low variance, high bias (depends heavily on V).</li>
+<li><b>λ = 1:</b> Â<sub>t</sub> = G<sub>t</sub> − V(s<sub>t</sub>) — Monte Carlo advantage. Low bias, high variance.</li>
+<li><b>λ ∈ (0,1):</b> exponential mix of n-step advantages — the bias–variance dial used in modern on-policy LLM-RL (PPO/GRPO-style trainers almost always sit on GAE or a close cousin).</li>
+</ul>
+<p>For computer-use: GAE helps when you have <i>some</i> intermediate reward structure or a decent value model. It does not magically solve a 300-step episode with a single terminal bit — you still need denser targets or a critic that has learned long-horizon value (itself hard).</p>
+
+<h2>7. Process rewards vs outcome rewards</h2>
+<div class="card note">
+<b>Outcome reward</b> (ORM-style): grade only the final answer / final UI state. One scalar for the whole trajectory.<br>
+<b>Process reward</b> (PRM-style): grade intermediate steps — each reasoning step, or each GUI checkpoint.
+</div>
+<p>Lightman et al. ("Let's Verify Step by Step", 2023) showed that process supervision significantly outperforms outcome supervision for training reward models on MATH: step-level labels give a denser, more local training signal and reduce "right answer, wrong reasoning." The same logic transfers to agents:</p>
+<ul>
+<li><b>OSWorld 2.0's ~27 weighted final-state checkpoints</b> are a form of process-shaped evaluation: they tell you which subgoals held, not just pass/fail. Used as training rewards (or as shaping), they turn one Bernoulli into a vector of subgoal successes.</li>
+<li><b>Step-level / checkpoint rewards</b> shrink the effective credit horizon: an action that completes "attach receipt" gets credit at that checkpoint, not only at episode end.</li>
+<li><b>Trade-off:</b> process rewards can be misspecified (reward hacking on the proxy), expensive to label, and may encourage myopic subgoal-chasing. Outcome rewards are aligned with the true goal but starve the learner of signal.</li>
+</ul>
+<p>For GUI RL, practical densification patterns include: checkpoint matchers on DOM/file state, progress heuristics (form fields filled), PRM-style judges on action traces, and verification tools that emit intermediate ± scores.</p>
+
+<h2>8. Worked example: 5-step GUI task</h2>
+<div class="card">
+<p><b>Task:</b> "Export the Q3 report as PDF to the shared drive." Minimal plan:</p>
+<ol style="margin-top:0">
+<li>Open the correct spreadsheet</li>
+<li>Select the Q3 sheet</li>
+<li>File → Export → PDF</li>
+<li>Choose the shared-drive folder</li>
+<li>Confirm save</li>
+</ol>
+<p>Suppose the agent does steps 1–3 correctly, picks the <b>wrong folder</b> at step 4, and confirms at step 5. Final grader: fail (r<sub>T</sub>=0). Toggle reward mode and step through which actions get nonzero credit under vanilla REINFORCE (γ=1).</p>
+<div class="ctl">
+<label>Reward mode:
+<select id="rmode">
+<option value="sparse">Sparse: only terminal r<sub>T</sub></option>
+<option value="process">Process: +1 per correct checkpoint</option>
+<option value="process_fail">Process: checkpoints 1–3 ok, 4–5 fail</option>
+</select></label>
+<button class="btn sec" id="wprev">← Prev</button>
+<span id="wstepn"></span>
+<button class="btn" id="wnext">Next →</button>
+</div>
+<div id="wsteps"></div>
+<div class="credit-row head"><span>#</span><span>Action</span><span>r<sub>t</sub></span><span>G<sub>t</sub></span><span>Credit?</span></div>
+<div id="credits"></div>
+<p id="wsum" style="font-size:.92em;margin-top:10px"></p>
+</div>
+
+<h2>9. Connecting the dots for computer-use training</h2>
+<div class="card mine"><p><i>Engineering synthesis — not a claim from any single paper.</i></p>
+<ol>
+<li><b>Sparse terminal RL alone is a poor fit for 300-step GUI tasks.</b> REINFORCE variance and smeared credit make learning sample-hungry even when local grounding is good (Sunday's lesson).</li>
+<li><b>Baselines / GAE are necessary but not sufficient.</b> They cut variance; they do not create intermediate targets. Pair them with denser rewards or a strong critic.</li>
+<li><b>Process rewards / checkpoints reshape the credit landscape</b> — the same reason OSWorld 2.0's partial scoring reveals "last mile" failures that binary hides, and the same reason PRMs beat ORMs on multi-step math.</li>
+<li><b>Don't confuse eval checkpoints with reward shaping.</b> Using the grader's internals as training reward can overfit to the benchmark; prefer independently specified subgoals or learned PRMs.</li>
+<li><b>Recovery behavior needs its own credit.</b> Yesterday: agents spend &lt;7% budget on repair. If only final success is rewarded, repair actions that don't change the terminal bit get no learning signal — consider explicit rewards (or preferences) for verified fixes.</li>
+</ol></div>
+
+<h2>10. Key takeaways</h2>
+<div class="card note"><ol>
+<li>Temporal credit assignment asks which past actions caused a delayed outcome — the central difficulty of RL on long computer-use trajectories.</li>
+<li>REINFORCE: ∇J = E[Σ<sub>t</sub> ∇ log π(a<sub>t</sub>|s<sub>t</sub>) · G<sub>t</sub>]. With sparse terminal reward, G<sub>t</sub> is the same random bit for every t → high variance, smeared credit.</li>
+<li>Subtracting a state-value baseline does not bias the gradient; advantages A<sub>t</sub> = G<sub>t</sub> − V(s<sub>t</sub>) cut variance.</li>
+<li>GAE(γ,λ) interpolates TD and Monte Carlo advantages — the bias–variance dial behind modern on-policy LLM-RL.</li>
+<li>Process/step rewards densify credit (PRMs; OSWorld-style checkpoints). They help learning but must be designed to avoid reward hacking.</li>
+<li>Local action success ≠ task success: grounding can be perfect while credit assignment still fails the long job.</li>
+</ol></div>
+
+<h2>11. Quiz</h2><div id="quiz"></div><p id="score" style="font-weight:600"></p>
+
+<h2>12. Sources</h2>
+<ul>
+<li>Williams, R. J. (1992). <a href="https://doi.org/10.1007/BF00992696">Simple Statistical Gradient-Following Algorithms for Connectionist Reinforcement Learning</a>. <i>Machine Learning</i>, 8, 229–256. (REINFORCE) · <a href="https://gwern.net/doc/reinforcement-learning/model-free/1992-williams.pdf">PDF</a></li>
+<li>Sutton, R. S., &amp; Barto, A. G. <a href="http://incompleteideas.net/book/the-book-2nd.html">Reinforcement Learning: An Introduction</a> (2nd ed.) — credit assignment, returns, policy gradients, actor–critic</li>
+<li>Schulman, Moritz, Levine, Jordan, Abbeel (2016). <a href="https://arxiv.org/abs/1506.02438">High-Dimensional Continuous Control Using Generalized Advantage Estimation</a> (arXiv:1506.02438, ICLR 2016)</li>
+<li>Lightman, Kosaraju, Burda, et al. (2023). <a href="https://arxiv.org/abs/2305.20050">Let's Verify Step by Step</a> (arXiv:2305.20050) — process vs outcome reward models on MATH; PRM800K</li>
+<li>Previous lessons: <a href="2026-10-13-osworld2-long-horizon.html">OSWorld 2.0 long-horizon failures</a> · <a href="2026-10-11-screen-grounding.html">Screen grounding</a></li>
+</ul>
+
+<script>
+const $=id=>document.getElementById(id);
+
+// ---- 4. variance / SNR toy
+function simVar(){
+  const N=+$('N').value, gRaw=+$('g').value, pr=+$('pr').value/100;
+  const gamma=gRaw/100;
+  $('Nv').textContent=N; $('gv').textContent=gamma.toFixed(2);
+  $('prv').textContent=(pr*100).toFixed(0)+'%';
+  // Analytic approx: r_t = 0 w.p. 1-pr; else ±1 eqprob → E[r]=0, Var(r)=pr
+  // Var(G0)= Σ_t γ^{2t} Var(r)  (indep)
+  let v=0; for(let t=0;t<N;t++) v+=Math.pow(gamma*gamma,t)*pr;
+  const std=Math.sqrt(v);
+  // With bias δ on mean reward when it fires: E[r]=pr*δ, signal = |Σ γ^t pr δ|
+  const delta=0.05;
+  let mean=0; for(let t=0;t<N;t++) mean+=Math.pow(gamma,t)*pr*delta;
+  const snr=Math.abs(mean)/(std+1e-9);
+  // Scale bars: std up to ~sqrt(N) ~20; snr typically <<1 for hard settings
+  const stdPct=Math.min(100, std/Math.sqrt(400)*100);
+  const snrPct=Math.min(100, snr/0.5*100);
+  $('bstd').style.width=stdPct+'%'; $('sstd').textContent=std.toFixed(2);
+  $('bsnr').style.width=snrPct+'%'; $('ssnr').textContent=snr.toFixed(3);
+  const effH=gamma>=0.999?N:(1-Math.pow(gamma,N))/(1-gamma);
+  $('vz').textContent=`Var(G₀)≈${v.toFixed(2)} (std ${std.toFixed(2)}). Effective discounted horizon Σγᵗ ≈ ${effH.toFixed(1)}. SNR≈${snr.toFixed(3)} under δ=${delta} mean bias when a reward fires.`;
+}
+['N','g','pr'].forEach(i=>$(i).oninput=simVar);simVar();
+
+// ---- 8. worked example
+const ACTS=[
+  {n:1,name:'Open Q3 spreadsheet',ok:true},
+  {n:2,name:'Select Q3 sheet',ok:true},
+  {n:3,name:'File → Export → PDF',ok:true},
+  {n:4,name:'Choose shared-drive folder',ok:false},
+  {n:5,name:'Confirm save',ok:false}
+];
+const WEXPLAIN={
+  sparse:[
+    'Terminal reward only. Episode fails → r₅=0. Every Gₜ=0.',
+    'Still Gₜ=0. No gradient signal on any action — including the three correct ones.',
+    'REINFORCE cannot preferentially downweight the wrong folder choice: credit is uniformly zero.',
+    'The failure action and the good actions are indistinguishable under sparse fail.',
+    'Takeaway: a failed sparse episode teaches nothing about which step broke the task.'
+  ],
+  process:[
+    'Process mode (all correct hypothetical): each checkpoint that matches emits +1.',
+    'After step 2, G₂ includes future checkpoint rewards — earlier correct actions still get credit.',
+    'Dense rewards mean Gₜ differs across t; good early actions keep positive return.',
+    'Wrong folder would get r₄=0 and cut remaining return — local blame becomes possible.',
+    'Confirm with wrong path: process rewards isolate the mistake near steps 4–5.'
+  ],
+  process_fail:[
+    'Checkpoints 1–3 match (+1 each); 4–5 fail (0). Rewards: [1,1,1,0,0].',
+    'G₁ = 1+1+1+0+0 = 3. Opening the right file gets clear positive credit.',
+    'G₃ = 1+0+0 = 1. Export still credited; the return has not yet collapsed.',
+    'G₄ = 0. Wrong folder gets zero return from here — REINFORCE downweights it.',
+    'G₅ = 0. Compared to sparse-all-zero, process rewards surgically credit 1–3 and blame 4–5.'
+  ]
+};
+function rewardsFor(mode){
+  if(mode==='sparse') return [0,0,0,0,0]; // failed episode
+  if(mode==='process') return [1,1,1,1,1]; // all correct hypothetical
+  return [1,1,1,0,0]; // process_fail
+}
+function returns(rs){
+  const G=new Array(rs.length); let acc=0;
+  for(let i=rs.length-1;i>=0;i--){acc+=rs[i];G[i]=acc;}
+  return G;
+}
+let wi=0;
+function renderWorked(){
+  const mode=$('rmode').value;
+  const rs=rewardsFor(mode), G=returns(rs);
+  const box=$('wsteps');
+  box.innerHTML='';
+  const d=document.createElement('div');
+  d.className='step on';
+  d.innerHTML=`<p><span class="pill">Step ${ACTS[wi].n}</span> <b>${ACTS[wi].name}</b> ${ACTS[wi].ok?'<span class="pill" style="background:#e3f7e8">correct action</span>':'<span class="pill" style="background:#fde8e8">mistake</span>'}</p>
+  <p>${WEXPLAIN[mode][wi]}</p>`;
+  box.appendChild(d);
+  $('wstepn').textContent=`${wi+1} / ${ACTS.length}`;
+  const cd=$('credits'); cd.innerHTML='';
+  ACTS.forEach((a,i)=>{
+    const row=document.createElement('div');
+    row.className='credit-row';
+    const cred=G[i]!==0;
+    row.style.opacity=i===wi?1:0.55;
+    row.innerHTML=`<span>${a.n}</span><span>${a.name}</span><span class="mono">${rs[i]}</span><span class="mono">${G[i]}</span><span>${cred?'<span class="dotc" style="background:#3aa55b"></span>nonzero':'<span class="dotc" style="background:#aaa"></span>zero'}</span>`;
+    cd.appendChild(row);
+  });
+  const nonzero=G.filter(x=>x!==0).length;
+  if(mode==='sparse') $('wsum').textContent='Sparse failed episode: all Gₜ=0 → REINFORCE gradient is zero. You learn nothing about step 4.';
+  else if(mode==='process') $('wsum').textContent='All-correct process episode: every Gₜ>0. Credit is dense along the trajectory.';
+  else $('wsum').textContent=`Process + partial fail: ${nonzero}/5 actions have nonzero Gₜ (steps 1–3). Steps 4–5 get zero — blame is localized near the mistake.`;
+}
+$('rmode').onchange=()=>{wi=0;renderWorked();};
+$('wprev').onclick=()=>{wi=Math.max(0,wi-1);renderWorked();};
+$('wnext').onclick=()=>{wi=Math.min(ACTS.length-1,wi+1);renderWorked();};
+renderWorked();
+
+// ---- 11. quiz — conceptual, shuffled
+const Q=[
+["A 200-step GUI episode gets reward only at the end (1 if success else 0). Under REINFORCE with γ=1, what is G_t for an early action vs a late action on the same trajectory?",
+["Early actions get larger G_t because more future rewards remain","G_t equals the same terminal reward for every t","Only the last action gets nonzero G_t","G_t is always 1/200"],
+1,"With a single terminal reward and γ=1, G_t = r_T for all t. Credit is completely smeared across the trajectory."],
+["Why does subtracting a baseline b(s_t) from the return not bias the REINFORCE gradient?",
+["Because b cancels in the TD error by definition","Because E[∇ log π(a|s) · b(s)] = 0 for any b that depends only on s","Because baselines are trained with a separate loss that orthogonalizes the gradient","Because we stop gradients through b in the autograd graph"],
+1,"Σ_a π(a|s) ∇ log π(a|s) = ∇ Σ_a π = ∇1 = 0. Any state-only (or constant) baseline has zero expected contribution."],
+["You densify rewards with OSWorld-style checkpoints (+1 when each subgoal's final-state predicate holds). What credit-assignment effect should you expect vs sparse terminal-only?",
+["Variance of the policy gradient grows because more reward terms are random","Effective credit horizon shrinks: actions that achieve a checkpoint get signal without waiting for episode end","The policy becomes unbiased only if λ=1 in GAE","Grounding accuracy must drop because the action space is unchanged"],
+1,"Intermediate rewards make G_t differ across timesteps and attribute progress to the actions that caused checkpoint changes."],
+["GAE with λ→0 vs λ→1: which statement is right?",
+["λ→0 is Monte Carlo (low bias, high variance); λ→1 is 1-step TD","λ→0 is 1-step TD (higher bias, lower variance); λ→1 recovers the Monte Carlo advantage G_t−V(s_t)","λ only changes the discount γ, not the estimator family","λ→0 and λ→1 are identical when rewards are sparse"],
+1,"Â_t = Σ_l (γλ)^l δ_{t+l}. λ=0 → δ_t; λ=1 → G_t−V(s_t). Middle λ trades bias for variance."],
+["A process reward gives +1 for 'file exists' even when the file contents are wrong. What failure mode is this?",
+["Baseline bias in REINFORCE","Reward hacking / misspecified proxy that can reinforce wrong trajectories","GAE λ set too low","Partial observability of screenshots"],
+1,"Dense proxies help credit assignment only if they track the true goal. A cheap 'file exists' check is exactly the verification failure OSWorld called out."],
+["Same 5-step export task: steps 1–3 correct, step 4 wrong folder, step 5 confirm; sparse terminal fail. Which REINFORCE outcome is most accurate?",
+["Only step 4 gets a negative update; steps 1–3 are unchanged","All five actions get zero gradient contribution from this episode","Steps 1–3 get positive updates from intrinsic progress","Step 5 gets all the blame because it is closest to the reward"],
+1,"r_T=0 ⇒ G_t=0 for all t. Sparse failure is silent — it does not localize blame to the bad action."],
+["You have a decent value model V(s) but still only a terminal task reward on 300-step jobs. What should you still worry about?",
+["Baselines will bias the policy gradient so you must avoid them","Advantages reduce variance but early and late actions can still share nearly the same G_t, so intermediate credit remains weak","GAE is undefined without process rewards","REINFORCE cannot use neural network policies"],
+1,"A_t = r_T − V(s_t) still hinges on one terminal bit. Similar V early in the episode ⇒ similar advantages; densification or a very strong long-horizon critic is still needed."]
+];
+Q.forEach(q=>{const c=q[1][q[2]];const o=q[1].slice();for(let i=o.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[o[i],o[j]]=[o[j],o[i]];}q[1]=o;q[2]=o.indexOf(c);});
+for(let i=Q.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[Q[i],Q[j]]=[Q[j],Q[i]];}
+let scr=0,ans=0;const qz=$('quiz');
+Q.forEach((q,i)=>{const d=document.createElement('div');d.className='q card';d.innerHTML=`<b>Q${i+1}. ${q[0]}</b>`;const ex=document.createElement('div');ex.className='exp';
+q[1].forEach((o,j)=>{const b=document.createElement('button');b.textContent=o;b.onclick=()=>{if(d.dataset.done)return;d.dataset.done=1;ans++;
+if(j===q[2]){b.className='ok';scr++;}else{b.className='bad';d.querySelectorAll('button')[q[2]].className='ok';}
+ex.textContent=(j===q[2]?'✓ Correct. ':'✗ Not quite. ')+q[3];$('score').textContent=`Score: ${scr}/${ans} answered (of ${Q.length})`;};d.appendChild(b);});
+d.appendChild(ex);qz.appendChild(d);});
+</script></body></html>

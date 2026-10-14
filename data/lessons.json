@@ -1,6 +1,96 @@
 {
   "lessons": [
     {
+      "date": "2026-10-14",
+      "slug": "credit-assignment-process-rewards",
+      "title": "Temporal credit assignment: from REINFORCE to process rewards",
+      "tags": [
+        "fundamentals"
+      ],
+      "summary": "Why sparse terminal rewards make long computer-use trajectories nearly unlearnable: REINFORCE variance, baselines and advantage, GAE intuition, and how process/step rewards (and OSWorld-style checkpoints) reshape credit assignment.",
+      "minutes": 15,
+      "path": "lessons/2026-10-14-credit-assignment-process-rewards.html",
+      "cards": [
+        {
+          "q": "With a single terminal reward and γ=1, how does G_t compare for early vs late actions on the same trajectory?",
+          "choices": [
+            "Early actions get larger G_t because more future rewards remain",
+            "G_t equals the same terminal reward for every timestep",
+            "Only the last action gets nonzero G_t",
+            "G_t is always 1/T"
+          ],
+          "a": "G_t equals the same terminal reward for every timestep",
+          "explanation": "Sparse terminal reward smears identical credit/blame across every action in the episode — the core temporal credit assignment failure for long GUI rollouts."
+        },
+        {
+          "q": "Why does subtracting a state-only baseline b(s) not bias the REINFORCE gradient?",
+          "choices": [
+            "Because b cancels in the TD error by definition",
+            "Because E[∇ log π(a|s) · b(s)] = 0 for any function of s alone",
+            "Because baselines are trained with a separate orthogonalizing loss",
+            "Because autograd stops gradients through b"
+          ],
+          "a": "Because E[∇ log π(a|s) · b(s)] = 0 for any function of s alone",
+          "explanation": "Σ_a π ∇ log π = ∇ Σ_a π = ∇1 = 0. Baselines cut variance without changing the expected gradient."
+        },
+        {
+          "q": "You add checkpoint rewards (+1 when each subgoal holds) instead of only terminal pass/fail. What should happen to credit assignment?",
+          "choices": [
+            "Policy-gradient variance must increase because more terms are random",
+            "Effective credit horizon shrinks: actions that hit a checkpoint get signal before episode end",
+            "The gradient is unbiased only if GAE uses λ=1",
+            "Grounding accuracy drops because the action space is unchanged"
+          ],
+          "a": "Effective credit horizon shrinks: actions that hit a checkpoint get signal before episode end",
+          "explanation": "Process/step rewards make G_t differ across timesteps so intermediate progress is attributable — the same reason PRMs beat pure outcome rewards on multi-step tasks."
+        },
+        {
+          "q": "GAE λ→0 vs λ→1: which is correct?",
+          "choices": [
+            "λ→0 is Monte Carlo; λ→1 is 1-step TD",
+            "λ→0 is 1-step TD (more bias, less variance); λ→1 recovers the Monte Carlo advantage G_t−V(s_t)",
+            "λ only retunes γ, not the estimator family",
+            "λ→0 and λ→1 are identical under sparse rewards"
+          ],
+          "a": "λ→0 is 1-step TD (more bias, less variance); λ→1 recovers the Monte Carlo advantage G_t−V(s_t)",
+          "explanation": "Â_t = Σ_l (γλ)^l δ_{t+l}. Middle λ values are the bias–variance dial used in modern on-policy LLM-RL."
+        },
+        {
+          "q": "A process reward gives +1 for 'export file exists' even when contents are wrong. What goes wrong?",
+          "choices": [
+            "Baseline bias in REINFORCE",
+            "Reward hacking: a misspecified proxy reinforces trajectories that satisfy the proxy but not the true goal",
+            "GAE λ set too low",
+            "Screenshots are partially observable"
+          ],
+          "a": "Reward hacking: a misspecified proxy reinforces trajectories that satisfy the proxy but not the true goal",
+          "explanation": "Dense rewards help only if they track the real objective. Cheap existence checks are exactly the false 'done' signal long-horizon agents already abuse."
+        },
+        {
+          "q": "5-step export: steps 1–3 correct, wrong folder at 4, confirm at 5; sparse terminal fail. What does REINFORCE get from this episode?",
+          "choices": [
+            "Only step 4 receives a negative update",
+            "Zero gradient contribution from every action — the failure is silent",
+            "Steps 1–3 get positive updates for partial progress",
+            "Step 5 absorbs all the blame as the action nearest the reward"
+          ],
+          "a": "Zero gradient contribution from every action — the failure is silent",
+          "explanation": "r_T=0 ⇒ G_t=0 for all t. Sparse failure does not localize blame; process rewards that zero out after the bad checkpoint would."
+        },
+        {
+          "q": "You have a good value baseline but still only terminal reward on 300-step jobs. What remains hard?",
+          "choices": [
+            "Baselines will bias the policy gradient, so avoid them",
+            "Advantages cut variance, but early and late actions can still share nearly the same G_t, so intermediate credit stays weak",
+            "GAE is undefined without process rewards",
+            "REINFORCE cannot use neural policies"
+          ],
+          "a": "Advantages cut variance, but early and late actions can still share nearly the same G_t, so intermediate credit stays weak",
+          "explanation": "A_t = r_T − V(s_t) still hinges on one Bernoulli. Densify rewards or learn a strong long-horizon critic — baselines alone do not invent step-level credit."
+        }
+      ]
+    },
+    {
       "date": "2026-10-13",
       "slug": "osworld2-long-horizon",
       "title": "OSWorld 2.0: Why computer-use agents still fail long-horizon work",
