@@ -1,6 +1,107 @@
 {
   "lessons": [
     {
+      "date": "2026-10-15",
+      "slug": "latent-world-action-gui",
+      "title": "Latent world action models for GUI agents",
+      "tags": [
+        "latest"
+      ],
+      "summary": "Why pixel-space GUI world models hit identity shortcuts and latency walls: Render-and-Re-Perceive, latent action+transition heads on shared LMM reps, action-aware contrastive objectives, and what this means for computer-use harnesses.",
+      "minutes": 15,
+      "path": "lessons/2026-10-15-latent-world-action-gui.html",
+      "cards": [
+        {
+          "q": "Why does the identity shortcut (predicting a future screen ≈ the current one) get worse as GUI transitions get larger?",
+          "choices": [
+            "Large transitions contain more pixels than the decoder can output",
+            "A pointwise loss is minimized by the conditional mean; large transitions have many weakly-constrained outcomes whose differences cancel, so the shared component (the current screen) dominates",
+            "Large transitions are always rarer in the training set",
+            "Optical flow fails on text, so the model ignores text regions"
+          ],
+          "a": "A pointwise loss is minimized by the conditional mean; large transitions have many weakly-constrained outcomes whose differences cancel, so the shared component (the current screen) dominates",
+          "explanation": "GUI transitions are discontinuous (an auth wall or new page), unlike flow-continuous video. More plausible futures means a blurrier conditional mean that regresses toward the present. Copying s_t is the cheapest way to lower the loss."
+        },
+        {
+          "q": "Per decision step with K candidates, what does Render-and-Re-Perceive need at inference that the latent world-action model does not?",
+          "choices": [
+            "A base agent to propose candidates",
+            "K generative renders of future screens plus K scorer passes that re-perceive them",
+            "An encoding of the current screenshot",
+            "A goal description"
+          ],
+          "a": "K generative renders of future screens plus K scorer passes that re-perceive them",
+          "explanation": "The latent method drops the transition head at inference and reads K index-token logits from one forward pass over a prompt that contains all K candidates."
+        },
+        {
+          "q": "Why isn't using only the current state z_t as the contrastive negative enough, e.g., for 'Sort: Most popular' vs 'Sort: Closest'?",
+          "choices": [
+            "Because z_t equals z_{t+1} for sort actions",
+            "Both predictions can move away from z_t in the same generic 'something changed' direction; negatives from other transitions (the memory bank) force the prediction to match this action's specific future",
+            "InfoNCE needs at least two positives",
+            "Temperature cancels with a single negative"
+          ],
+          "a": "Both predictions can move away from z_t in the same generic 'something changed' direction; negatives from other transitions (the memory bank) force the prediction to match this action's specific future",
+          "explanation": "The z_t negative is anti-copy, and the bank negatives are anti-generic. You need both to get action-specific consequence features."
+        },
+        {
+          "q": "Why put all K candidates in one prompt in random order and predict the annotated action's next state from the single shared final-token state h_t?",
+          "choices": [
+            "To reduce image tokens",
+            "So h_t must encode which candidate is correct and what it leads to, instead of relying on a position prior, which couples future-state supervision to the features the action head scores with",
+            "Because LoRA cannot touch per-candidate tokens",
+            "So the transition head can be used at inference"
+          ],
+          "a": "So h_t must encode which candidate is correct and what it leads to, instead of relying on a position prior, which couples future-state supervision to the features the action head scores with",
+          "explanation": "Both losses update the same LoRA backbone. The world-model objective works as a representation regularizer on the reranker."
+        },
+        {
+          "q": "If the correct action is absent from the base agent's K candidates, what can the latent world-action model do?",
+          "choices": [
+            "Generate the missing action from the predicted latent",
+            "Nothing: it only re-ranks proposals, so success is bounded by candidate coverage",
+            "Retrieve it from the contrastive memory bank",
+            "Fall back to a pixel world model"
+          ],
+          "a": "Nothing: it only re-ranks proposals, so success is bounded by candidate coverage",
+          "explanation": "Fixes are upstream: more diverse sampling, adaptive K, better proposers. During training, steps with no matching candidate are labeled with the agent's own top-1."
+        },
+        {
+          "q": "What is the main trade-off of discarding the transition head at inference?",
+          "choices": [
+            "The action head stops working",
+            "Foresight adds no inference cost, but it lives only implicitly in h_t: no inspectable predicted future and no multi-step latent rollout",
+            "Accuracy drops to the base agent's level",
+            "The model must regenerate pixels"
+          ],
+          "a": "Foresight adds no inference cost, but it lives only implicitly in h_t: no inspectable predicted future and no multi-step latent rollout",
+          "explanation": "Prediction is a training-time shaping signal. The paper lists one-step-only prediction and lack of interpretability as limitations."
+        },
+        {
+          "q": "A confidence gate invokes the judge only when the agent is unsure. Which errors can it never catch, and what's a sensible harness fix?",
+          "choices": [
+            "Low-confidence errors; lower the threshold",
+            "High-confidence agent errors bypass rescoring; force rescoring for irreversible actions or learn an uncertainty-aware invocation policy",
+            "Duplicate-candidate errors; raise τ",
+            "Grounding errors; re-enable the transition head"
+          ],
+          "a": "High-confidence agent errors bypass rescoring; force rescoring for irreversible actions or learn an uncertainty-aware invocation policy",
+          "explanation": "Gating trades coverage for compute and depends on calibrated proposer confidence. Send, pay, and delete steps are worth one judge pass regardless of confidence."
+        },
+        {
+          "q": "Offline, latent rescoring improves action-type accuracy more consistently than click grounding accuracy. Why?",
+          "choices": [
+            "The contrastive loss degrades spatial features",
+            "Rescoring changes which candidate is chosen but never refines a candidate's coordinates, so grounding stays the proposer's job",
+            "Grounding is evaluated on a different dataset",
+            "The action head outputs coordinates at low resolution"
+          ],
+          "a": "Rescoring changes which candidate is chosen but never refines a candidate's coordinates, so grounding stays the proposer's job",
+          "explanation": "A reranker can fix 'scroll vs tap search' type errors. It cannot move a slightly-off click into the right bounding box."
+        }
+      ]
+    },
+    {
       "date": "2026-10-14",
       "slug": "credit-assignment-process-rewards",
       "title": "Temporal credit assignment: from REINFORCE to process rewards",

@@ -1,0 +1,322 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Latent world action models for GUI agents</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<style>
+body{font-family:Inter,system-ui,sans-serif;max-width:900px;margin:0 auto;padding:24px;color:#1d2433;line-height:1.6;background:#fafbfc}
+h1{font-size:2rem;margin-bottom:4px}h2{border-bottom:2px solid #e3e7ee;padding-bottom:4px;margin-top:40px}h3{margin-bottom:4px}
+code,.mono{font-family:'JetBrains Mono',monospace;font-size:.9em;background:#eef1f6;padding:1px 4px;border-radius:4px}
+.card{background:#fff;border:1px solid #e3e7ee;border-radius:10px;padding:16px 20px;margin:16px 0}
+.note{border-left:4px solid #4f7cff;background:#f2f6ff}.warn{border-left:4px solid #e0a100;background:#fff9e8}.mine{border-left:4px solid #8a5cf6;background:#f6f2ff}
+table{border-collapse:collapse;width:100%;font-size:.92em}td,th{border:1px solid #e3e7ee;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f3f5f9}
+.ctl{display:flex;gap:16px;flex-wrap:wrap;margin:10px 0;align-items:center}
+.ctl label{font-size:.92em}input[type=range]{vertical-align:middle;width:170px}
+.bar{height:22px;border-radius:6px;background:#e9ecf2;position:relative;overflow:hidden;margin:4px 0}
+.bar>div{height:100%;background:#4f7cff;transition:width .2s}.bar>span{position:absolute;left:8px;top:1px;font-size:.85em;font-weight:600}
+.q{margin:14px 0}.q button{display:block;margin:4px 0;text-align:left;width:100%;padding:8px;border:1px solid #cfd6e2;border-radius:6px;background:#fff;cursor:pointer;font:inherit}
+.q button.ok{background:#e3f7e8;border-color:#3aa55b}.q button.bad{background:#fde8e8;border-color:#d64545}.exp{font-size:.9em;color:#444;margin-top:4px}
+details{background:#f7f8fb;border:1px dashed #c9d1de;border-radius:8px;padding:8px 12px;margin:10px 0}summary{cursor:pointer;font-weight:600}
+.btn{padding:8px 14px;border-radius:8px;border:1px solid #4f7cff;background:#4f7cff;color:#fff;font:inherit;cursor:pointer}.btn.sec{background:#fff;color:#4f7cff}
+.pill{display:inline-block;font-size:.78em;padding:1px 8px;border-radius:999px;background:#eef1f6;margin-right:4px}
+.eq{font-family:'JetBrains Mono',monospace;background:#f3f5f9;padding:12px 14px;border-radius:8px;overflow-x:auto;margin:10px 0;font-size:.88em;line-height:1.7}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.grid3>div{background:#f7f8fb;border-radius:8px;padding:10px;font-size:.9em}
+@media(max-width:700px){.grid3{grid-template-columns:1fr}}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:.88em;margin:8px 0}.flow span.box{background:#eef1f6;border-radius:6px;padding:4px 8px}.flow span.hot{background:#fde8e8}.flow span.cool{background:#e3f7e8}
+.gs{display:grid;grid-template-columns:34px 70px 1fr 90px 1fr;gap:6px;align-items:center;padding:5px 0;border-bottom:1px solid #f0f2f6;font-size:.86em}
+.gs.head{font-weight:600;color:#555;border-bottom:2px solid #e3e7ee}
+svg text{font-family:Inter,sans-serif;font-size:11px}
+</style></head><body><nav id="dal-nav" style="position:sticky;top:0;z-index:9999;display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;background:#111827;font:600 15px/1.2 system-ui,sans-serif"><a href="../" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">← Home</a><a href="../archive.html" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">Archive</a><a href="../review.html" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">Review</a></nav>
+<h1>Latent world action models for GUI agents</h1>
+<p style="color:#667">Track: <b>latest</b> · Lesson for Siddhant · Oct 15, 2026 · ~15 min · Paper: Yu, Choi, Park, Shin, Shim (KAIST), <a href="https://arxiv.org/abs/2610.14228">arXiv:2610.14228</a></p>
+
+<div class="card note"><b>Callback / retrieval warm-up.</b> Answer in your head before reading on:
+<ol>
+<li>Yesterday (credit assignment): with only a terminal reward, why does REINFORCE fail to tell step 47 apart from step 280? What does a process reward change?</li>
+<li>Tuesday (OSWorld 2.0): long-horizon agents compound errors and rarely recover. Where in an observe→act loop could a model that <i>anticipates</i> each action's consequence help?</li>
+<li>Sunday (screen grounding): if a candidate's click coordinates are wrong, can a better <i>choice among candidates</i> fix it?</li>
+</ol>
+<details><summary>Check yourself</summary>(1) Every G<sub>t</sub> equals the same terminal bit, so credit is smeared; dense/process signals localize it. (2) <b>Before execution</b>: score each candidate by its predicted outcome so the agent avoids irreversible or dead-end steps, rather than discovering them afterwards and paying for recovery. A one-step world model is a local, dense signal, like a process reward for the action you haven't taken yet. (3) No. Choosing among candidates changes <i>which</i> action runs, not how precisely it is grounded. Keep this in mind: it explains why today's method helps action-type accuracy more than grounding.</details></div>
+
+<h2>1. Intuition: why predict the next screen before acting?</h2>
+<div class="card note">
+An LMM agent's policy is a <b>reactive</b> map π(a | s<sub>t</sub>, g, H<sub>t</sub>). It never asks "what happens if I tap this?" A <b>world model</b> adds foresight: for each candidate a<sup>k</sup>, estimate the consequence s<sub>t+1</sub><sup>k</sup> and prefer the one that moves toward the goal. That matters most when actions are <i>irreversible</i> (payments, deletes, sends) and in long tasks, where one wrong branch costs dozens of recovery steps.
+<br><br>
+The open question is <b>what form the prediction should take</b>. Should it be a screenshot, renderable HTML, a text description, or a latent vector? Today's paper argues that action selection needs the <i>decision-relevant consequence</i> ("this leads to a login wall") and not the appearance of the next screen ("this exact logo, these exact fields"). Predicting pixels costs latency and, less obviously, invites a degenerate solution called the <b>identity shortcut</b>.
+</div>
+
+<h2>2. The Render-and-Re-Perceive pipeline (what pixel world models do)</h2>
+<p>Recent GUI world models (diffusion-based screenshot synthesis; Code2World's renderable HTML) all use a two-stage protocol. A frozen agent <i>G</i> proposes K candidates. A world model <i>W</i> renders each future, and a separate scorer π re-perceives each render:</p>
+<div class="eq">
+<i>A</i><sub>t</sub> = <i>G</i>(s<sub>t</sub>, g, H<sub>t</sub>) = {a<sub>t</sub><sup>k</sup>}<sub>k=1..K</sub><br>
+ŝ<sub>t+1</sub><sup>k</sup> = <i>W</i>(s<sub>t</sub>, a<sub>t</sub><sup>k</sup>, g) &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// stage 1: render K futures (diffusion or autoregressive HTML)<br>
+q<sub>t</sub><sup>k</sup> = π(s<sub>t</sub>, g, a<sub>t</sub><sup>k</sup>, ŝ<sub>t+1</sub><sup>k</sup>) &nbsp;&nbsp;// stage 2: re-perceive each future<br>
+a<sub>t</sub><sup>*</sup> = argmax<sub>k</sub> q<sub>t</sub><sup>k</sup>
+</div>
+<div class="flow"><span class="box">s<sub>t</sub>, g</span>→<span class="box">agent → K candidates</span>→<span class="box hot">K × generate ŝ<sup>k</sup> (diffusion steps / thousands of HTML tokens)</span>→<span class="box hot">K × scorer reads ŝ<sup>k</sup> (image tokens)</span>→<span class="box">argmax</span></div>
+<div class="grid3">
+<div><b>(L1) Latency.</b> Each step costs K generative rollouts plus K extra perception passes. Diffusion needs iterative denoising, and HTML generation needs long autoregressive decoding. That cost is per step, multiplied over a long episode.</div>
+<div><b>(L2) Over-broad target.</b> The generator has to model all appearance variation of the next screen (fonts, images, layout, keyboard) even though the decision usually hinges on a few bits.</div>
+<div><b>Bottleneck.</b> The scorer only sees what the renderer produced, so render errors pass straight into the decision. A plausible but wrong render can be worse than no render at all.</div>
+</div>
+
+<h2>3. Why GUI transitions break pixel world models</h2>
+<p><b>Natural video is continuous.</b> Consecutive frames are well explained by <i>transporting</i> existing pixels (optical flow), so a warped previous frame leaves a small residual. <b>GUI transitions are discontinuous.</b> One tap can replace the entire screen with a different page, or a different app. The paper measures this directly: it warps s<sub>t</sub> toward s<sub>t+1</sub> with RAFT optical flow and reports that GUI transitions leave a much larger post-warp residual, covering much more of the screen, than natural video (REDS, YouCook2, TVQA) or even FPS game footage.</p>
+<div class="card warn"><b>The identity shortcut.</b> When the new content is only weakly constrained by (s<sub>t</sub>, a), a predictor trained on a pointwise reconstruction loss finds a cheap way to lower its loss: <b>copy the current screen</b>. The prediction stays close to s<sub>t</sub> even when the real s<sub>t+1</sub> is a different page.
+<ul>
+<li><b>Why copying is "optimal".</b> A pointwise loss (L2, or 1−cos) is minimized by the <i>conditional mean</i> E[s<sub>t+1</sub> | s<sub>t</sub>, a]. If an action has many plausible outcomes (which page loads, what content, which state the server is in), their idiosyncratic parts average out, and the one component every outcome shares is the current screen. The mean future therefore drifts back toward the present.</li>
+<li><b>Why it worsens with transition magnitude.</b> Small transitions (a toggle flips) have few plausible outcomes, so the mean is sharp. Large transitions (navigation, an auth wall, an app switch) bring in a lot of new content that the current screen does not pin down, so the outcomes are many and the mean collapses toward s<sub>t</sub>. The paper's Figure 4 shows this pattern: shortcut frequency rises and downstream success falls from weak to medium to strong transitions for both pixel baselines.</li>
+<li><b>Failure modes differ.</b> The diffusion model reproduces the current screen with local texture edits. Code2World rarely copies pixel-for-pixel, but it renders a well-formed, app-plausible page that is <i>not</i> the real outcome. Both are bad inputs for a scorer.</li>
+</ul></div>
+
+<h2>4. Interactive: identity shortcut vs transition magnitude (toy model)</h2>
+<div class="card">
+<p><i>Toy model for intuition only. It is mine, not the paper's metric, and it uses no paper numbers.</i> Write the real change as s<sub>t+1</sub> = s<sub>t</sub> + m·Δ<sub>k</sub>, where m is the transition magnitude and Δ<sub>k</sub> is one of K(m) plausible outcomes. Each Δ<sub>k</sub> = ψ·u + √(1−ψ²)·n<sub>k</sub>: a <b>shared</b> component u (the part of the change every outcome agrees on, such as "a login page appeared") plus an <b>idiosyncratic</b> part n<sub>k</sub> (random, nearly orthogonal across outcomes). A pointwise-loss predictor outputs the conditional mean, so its predicted change is m·Δ̄ with</p>
+<div class="eq">‖Δ̄‖ ≈ r = √( ψ² + (1−ψ²)/K(m) ), &nbsp;&nbsp; K(m) = 1 + c·(10m)² &nbsp;&nbsp;⇒ fraction of change lost to copying ≈ 1 − r</div>
+<p>In <b>pixel space</b> ψ is small, because outcomes that mean the same thing look very different. In a <b>semantic latent space</b> ψ is larger, because many renderings of "login page" map to nearby embeddings. A <b>contrastive</b> objective with z<sub>t</sub> as a negative penalizes staying near the current state, which removes the copy collapse. What it cannot remove is genuine uncertainty about the <i>direction</i> of change, which shows up as alignment cos(Δ̄, Δ<sub>true</sub>) ≈ r.</p>
+<div class="ctl">
+<label>Transition magnitude m: <input type="range" id="m" min="0" max="100" value="45"> <b id="mv"></b></label>
+<label>Outcome-multiplicity growth c: <input type="range" id="c" min="0" max="200" value="60"> <b id="cv"></b></label>
+</div>
+<div class="ctl">
+<label>Shared fraction in pixel space ψ<sub>pix</sub>: <input type="range" id="pp" min="0" max="100" value="20"> <b id="ppv"></b></label>
+<label>Shared fraction in latent space ψ<sub>lat</sub>: <input type="range" id="pl" min="0" max="100" value="70"> <b id="plv"></b></label>
+</div>
+<div>Pixel + pointwise loss: change lost to copying (identity collapse)<div class="bar"><div id="b1" style="background:#d64545"></div><span id="s1"></span></div></div>
+<div>Latent + pointwise (cosine regression): change lost to copying<div class="bar"><div id="b2" style="background:#e0a100"></div><span id="s2"></span></div></div>
+<div>Latent + action-aware contrastive: copy collapse ≈ 0, residual = direction ambiguity 1 − r<sub>lat</sub><div class="bar"><div id="b3" style="background:#3aa55b"></div><span id="s3"></span></div></div>
+<svg id="plot" viewBox="0 0 640 210" style="width:100%;background:#fbfcfe;border:1px solid #eef1f6;border-radius:8px;margin-top:8px"></svg>
+<p id="tz" style="font-size:.92em"></p>
+<p style="font-size:.9em;color:#555">Try this: set c=0 (every action has one outcome). All curves flatten, because a deterministic world has no shortcut. Raise c and the red curve climbs with m, which is the qualitative pattern in the paper's Figure 4. Then raise ψ<sub>lat</sub>: a better latent space helps both latent variants, but only the contrastive objective explicitly forbids "stay near z<sub>t</sub>".</p>
+</div>
+
+<h2>5. The latent reformulation: one shared state, two heads</h2>
+<p>The paper replaces "render, then re-perceive" with <b>"represent, then score"</b>. A LoRA-adapted LMM (Qwen3-VL-8B-Instruct, with LoRA on all attention and MLP projections) reads the screenshot, goal, recent history, and <b>all K candidates in a single prompt</b>, in a <b>randomly permuted order</b>:</p>
+<div class="eq">h<sub>t</sub> = <i>W</i><sub>θ</sub>(s<sub>t</sub>, g, H<sub>t</sub>, <i>A</i><sub>t</sub>) &nbsp;&nbsp;&nbsp;// last-layer hidden state at the final prompt token</div>
+<h3>ActionHead: scoring candidates</h3>
+<div class="eq">ActionHead(h<sub>t</sub>)<sub>k</sub> = w<sub>k</sub><sup>⊤</sup> h<sub>t</sub> &nbsp;&nbsp;(w<sub>k</sub> = LM output embedding of index token "k")<br>
+p<sub>t</sub> = softmax([w<sub>k</sub><sup>⊤</sup>h<sub>t</sub>]<sub>k=1..K</sub>), &nbsp;&nbsp; ℒ<sub>Action</sub> = −Σ<sub>k</sub> y<sub>t</sub><sup>k</sup> log p<sub>t</sub><sup>k</sup></div>
+<p>So the "action head" is just the LM head restricted to the K index tokens: a 4096→K linear map. It is a listwise softmax reranker. The target y<sub>t</sub> is the index of the candidate that matches the annotated action. The ground truth is <i>not</i> injected into the candidate set. If no candidate matches, the target is the agent's own top candidate, so the model also learns "keep the agent's choice when nothing is better".</p>
+<h3>TransitionHead: predicting the future in latent space</h3>
+<div class="eq">ẑ<sub>t+1</sub> = TransitionHead(h<sub>t</sub>) &nbsp;&nbsp;(single linear layer 4096→4096)<br>
+z<sub>t+1</sub> = φ̄(s<sub>t+1</sub>) &nbsp;&nbsp;(frozen base Qwen3-VL-8B, screenshot only, mean-pooled last-layer states; precomputed)</div>
+<div class="card note"><b>Why the shared h<sub>t</sub> plus permutation is the clever bit.</b> The transition head must predict the next state of the <i>annotated</i> action, and it only sees h<sub>t</sub>, a single vector computed over all K candidates in a shuffled order. To produce z<sub>t+1</sub>, h<sub>t</sub> has to encode <b>which candidate is correct</b> and <b>where it leads</b>. Without permutation, h<sub>t</sub> could lean on a positional prior ("index 0 is usually right"). Because both losses backprop into the same LoRA backbone, the prediction objective shapes the very features the action head reads. The world model is not a separate module. It works as a <i>representation regularizer</i> on the reranker.</div>
+<p>Note the design choice in the target: φ̄ is <b>frozen</b> and is the <i>base</i> model without LoRA. Precomputed targets make training cheap and stable. Since the targets cannot move, the predictor cannot "win" by collapsing the target space, which is the usual danger in latent prediction. The price is that the targets are only as decision-relevant as base-model screenshot embeddings happen to be.</p>
+
+<h2>6. Action-aware contrastive loss (fixing the shortcut in latent space)</h2>
+<p>A pointwise transition loss, which is what the ablation uses (ℒ = 1 − cos(ẑ<sub>t+1</sub>, z<sub>t+1</sub>)), pulls each prediction toward its own target <i>independently</i>. Nothing in it says "and be far from the present". The identity shortcut therefore survives in latent space as well. The fix is an InfoNCE objective with carefully chosen negatives. With all vectors ℓ<sub>2</sub>-normalized (written with a tilde):</p>
+<div class="eq"><i>N</i> = { z̃<sub>t</sub> } ∪ <i>B̃</i> &nbsp;&nbsp;&nbsp;// current state + FIFO memory bank of other transitions<br><br>
+ℒ<sub>Transition</sub> = −log &nbsp; exp(ẑ̃·z̃<sub>t+1</sub>/τ) &nbsp;/&nbsp; [ exp(ẑ̃·z̃<sub>t+1</sub>/τ) + Σ<sub>n∈<i>N</i></sub> exp(ẑ̃·n/τ) ]</div>
+<div class="grid3">
+<div><b>Positive z<sub>t+1</sub></b><br>"Be where this action actually lands."</div>
+<div><b>Negative z<sub>t</sub></b><br>"Don't stay where you are." This term penalizes the identity shortcut directly.</div>
+<div><b>Negatives <i>B</i></b><br>"Don't be <i>any</i> plausible future." The bank holds (z<sub>t+1</sub>, z<sub>t</sub>) pairs from recent training examples, MoCo-style, with no momentum encoder needed because targets are frozen.</div>
+</div>
+<p><b>Why z<sub>t</sub> alone is not enough.</b> On a filter sheet, "Most popular" and "Closest" each produce a next screen that differs only in which sort option is active. Both predictions can satisfy "be far from z<sub>t</sub>" by moving in the same generic "something changed" direction. The bank negatives include other futures, so a prediction that matches a <i>generic</i> future gets penalized, and ẑ has to encode the consequence specific to this action. (Defaults in the paper: τ = 0.07; bank of 192 recent pairs, i.e., 384 negatives.)</p>
+
+<div class="card">
+<b>Interactive: what the InfoNCE gradient pushes against</b>
+<p style="font-size:.92em">Set cosine similarities for the prediction ẑ (assume all bank negatives share one mean similarity). The softmax over {positive, z<sub>t</sub>, bank} gives the loss. For normalized vectors, ∂ℒ/∂ẑ̃ = (1/τ)[ −(1−P<sub>+</sub>)·z̃<sub>t+1</sub> + P<sub>z<sub>t</sub></sub>·z̃<sub>t</sub> + Σ<sub>n</sub> P<sub>n</sub>·n ], so each negative's share of the softmax mass is how hard the gradient pushes ẑ away from it.</p>
+<div class="ctl">
+<label>cos(ẑ, z<sub>t+1</sub>): <input type="range" id="cp" min="-100" max="100" value="80"> <b id="cpv"></b></label>
+<label>cos(ẑ, z<sub>t</sub>): <input type="range" id="ct" min="-100" max="100" value="95"> <b id="ctv"></b></label>
+</div><div class="ctl">
+<label>mean cos(ẑ, bank): <input type="range" id="cb" min="-100" max="100" value="40"> <b id="cbv"></b></label>
+<label>bank size |<i>B</i>|: <input type="range" id="nb" min="0" max="384" value="384"> <b id="nbv"></b></label>
+<label>τ: <input type="range" id="tau" min="2" max="100" value="7"> <b id="tauv"></b></label>
+</div>
+<div class="ctl"><button class="btn sec" data-p="copy">Preset: identity copy</button><button class="btn sec" data-p="generic">Preset: moved, but generic</button><button class="btn sec" data-p="spec">Preset: action-specific</button></div>
+<div>P(positive)<div class="bar"><div id="bp" style="background:#3aa55b"></div><span id="sp"></span></div></div>
+<div>Softmax mass on z<sub>t</sub> (push away from current screen)<div class="bar"><div id="bt" style="background:#d64545"></div><span id="st"></span></div></div>
+<div>Softmax mass on bank (push away from other futures)<div class="bar"><div id="bb" style="background:#e0a100"></div><span id="sb"></span></div></div>
+<p id="lz" class="mono" style="display:block;padding:6px 8px"></p>
+<p style="font-size:.9em;color:#555">Look at the "identity copy" preset. With τ = 0.07, a 0.15 cosine gap between z<sub>t</sub> and z<sub>t+1</sub> is already an exponential gap of e<sup>0.15/0.07</sup> ≈ 8.5×, so nearly all the gradient goes to pushing away from the current screen. In the "generic" preset the bank takes over. Raise τ and the objective blurs into something close to pointwise regression.</p>
+</div>
+
+<h2>7. Joint objective and inference</h2>
+<div class="eq">ℒ = ℒ<sub>Action</sub> + λ · ℒ<sub>Transition</sub> &nbsp;&nbsp;&nbsp;(λ = 1 in the paper; both terms update the shared LoRA backbone)</div>
+<div class="flow"><b>Train:</b><span class="box">(s<sub>t</sub>, g, H<sub>t</sub>, shuffled <i>A</i><sub>t</sub>)</span>→<span class="box">LMM + LoRA → h<sub>t</sub></span>→<span class="box cool">ActionHead → CE</span>+<span class="box cool">TransitionHead → InfoNCE vs φ̄(s<sub>t+1</sub>), φ̄(s<sub>t</sub>), <i>B</i></span></div>
+<div class="flow"><b>Infer:</b><span class="box">agent proposes K + confidences</span>→<span class="box">gate</span>→<span class="box cool">1 forward pass → K index logits → argmax</span><span class="pill">transition head discarded</span><span class="pill">no screen generated</span></div>
+<p>At inference the transition head is <b>thrown away</b>. Its contribution is entirely baked into h<sub>t</sub>. In effect this is a <i>learned verifier/reranker whose features were trained to be predictive of consequences</i>. The cost per invoked step is one prefill over one prompt containing all K candidates, plus K logits. Compare that with K generations and K re-perceptions. (A small implementation detail: to keep prompts identical across selectors, the scoring prompt still has image slots "for predicted screens", and the latent method fills them with blank placeholders.)</p>
+<p><b>Confidence gate</b> (adopted from prior GUI world models). Rescore only when the agent is unsure. Concretely, the agent's top candidate is kept if there are fewer than K candidates, if it is a terminal action, if the top two candidates are identical, or if exactly one candidate clears the confidence threshold c<sub>hi</sub>. Otherwise the judge decides.</p>
+
+<h2>8. Worked example: "Send" → login page</h2>
+<div class="card">
+<p><b>Goal:</b> "Reply to Alex's email saying I'll be 10 minutes late." The agent has typed the reply. Candidates (shuffled in the prompt):</p>
+<table><tr><th>#</th><th>Candidate</th><th>Real next screen</th><th>What a pixel model must produce</th><th>What the latent must capture</th></tr>
+<tr><td>A</td><td>tap <code>Send</code></td><td>Session-expired <b>login page</b>: logo, email/password fields, keyboard</td><td>All of it: branding, layout, field labels, keyboard. None of it is in s<sub>t</sub> (a large, discontinuous transition, which is exactly where the identity shortcut strikes)</td><td>"Left compose; auth wall; message <i>not yet</i> sent; credentials needed next"</td></tr>
+<tr><td>B</td><td>tap <code>Save draft</code></td><td>Inbox with a "Draft saved" toast</td><td>Inbox list, avatars, toast</td><td>"Left compose; draft persisted; reply not sent"</td></tr>
+<tr><td>C</td><td>tap Alex's address chip</td><td>Contact card overlay</td><td>Overlay with photo, buttons</td><td>"Still composing; side panel open; no progress"</td></tr>
+</table>
+<div class="ctl"><button class="btn sec" id="wx1">Which candidate is right?</button><button class="btn sec" id="wx2">What if the goal were "save it, don't send"?</button><button class="btn sec" id="wx3">Where does the shortcut hurt?</button></div>
+<p id="wxo" style="font-size:.95em"></p>
+</div>
+
+<h2>9. Ablation intuition: what each piece buys</h2>
+<p>The module ablation on AndroidWorld (Qwen3-VL-8B base agent) adds components one at a time. Read it as a story about <i>what each piece teaches the representation</i>, not as numbers to memorize:</p>
+<table><tr><th>Group</th><th>Adds</th><th>What the representation learns</th><th>Direction of effect</th></tr>
+<tr><td>I</td><td>(base agent)</td><td>Agent's own top-1</td><td>reference</td></tr>
+<tr><td>II</td><td>ActionHead only</td><td>A discriminative reranker trained in-domain on the agent's own candidate distribution: "given this context, which index is correct?"</td><td><b>Largest single jump.</b> A dedicated listwise judge with LoRA is already strong.</td></tr>
+<tr><td>III</td><td>+ TransitionHead (pointwise cosine)</td><td>h<sub>t</sub> must also predict where the correct action lands, which injects consequence information</td><td>Further gain, but pointwise loss still allows the identity shortcut</td></tr>
+<tr><td>IV</td><td>+ action-aware contrastive</td><td>Prediction must differ from z<sub>t</sub> <i>and</i> from other futures → action-specific consequences</td><td>Further gain, isolating the value of the negatives</td></tr>
+</table>
+<div class="card mine"><i>My reading. This is critique, not a claim from the paper.</i>
+<ul>
+<li>The headline "beats pixel world models" mixes two effects: (a) training an in-domain reranker at all (Group II), and (b) world-model supervision (III→IV). The pixel baselines receive the same candidates but use a different selector, so part of the gap comes from the judge, not from latent vs pixel.</li>
+<li>The paper is careful about its representation probe. Its t-SNE shows action-specific structure only when it reads the transition-head output at the ground-truth <i>candidate's</i> tokens. The final-token h<sub>t</sub> used for scoring does not separate action types under the same residual analysis. The consequence signal is real, but you shouldn't picture h<sub>t</sub> as a clean "future-state vector".</li>
+<li>Offline, rescoring lifts action <i>type</i> accuracy more reliably than <i>grounding</i>. That is expected: reranking chooses among proposals and never refines a candidate's coordinates. Grounding (Sunday's lesson) stays the proposer's job.</li>
+</ul></div>
+
+<h2>10. Interactive: the confidence gate in a harness (toy)</h2>
+<div class="card">
+<p style="font-size:.92em"><i>Synthetic 12-step episode, made up for intuition.</i> Each row is a step: the agent's top-1 confidence, whether top-1 is correct, and whether the correct action is among the K candidates at all. The judge is assumed to pick correctly when the right action is present on most steps, and occasionally to override a correct top-1 (judges aren't perfect). Move the threshold and watch what you trade.</p>
+<div class="ctl"><label>Gate threshold c<sub>hi</sub> (rescore if top-1 conf &lt; c<sub>hi</sub>): <input type="range" id="gth" min="0" max="101" value="80"> <b id="gthv"></b></label></div>
+<div class="gs head"><span>#</span><span>conf</span><span>agent top-1</span><span>gate</span><span>outcome</span></div>
+<div id="gsr"></div>
+<p id="gsum" style="font-size:.92em;font-weight:600"></p>
+<p style="font-size:.9em;color:#555">Notice the two errors no threshold can fix in this toy. Step 9 is a <b>confident</b> mistake, which bypasses the gate until c<sub>hi</sub> exceeds its confidence. Step 11 has the correct action <b>absent</b> from the candidates, and a reranker cannot invent it.</p>
+</div>
+
+<h2>11. Harness takeaways for computer-use</h2>
+<div class="card mine"><p><i>Engineering synthesis for your stack, built on the paper's mechanisms and stated limitations.</i></p>
+<ol>
+<li><b>Use it as a candidate rescorer, not a planner.</b> The pattern is to sample K diverse proposals from your policy, then run one judge prefill over all K. That costs about as much as one extra policy call, versus K renders and K re-perceptions for pixel world models. It fits naturally between "propose" and "execute" in an observe→act loop.</li>
+<li><b>Proposal coverage is the ceiling.</b> If the right action is not among the K candidates, nothing downstream recovers it. Invest in proposal diversity (temperature, different prompting, grounding variants), adaptive K, and dedupe. Note that the paper itself only invokes the judge when the top two candidates differ.</li>
+<li><b>Gate on uncertainty, but audit confident errors.</b> A fixed threshold saves compute and leaves high-confidence mistakes unscreened. For irreversible actions (send, pay, delete) you could force the judge regardless of confidence. Calibration of the proposer's confidences becomes a first-class metric.</li>
+<li><b>One-step foresight only.</b> The transition objective covers s<sub>t</sub>→s<sub>t+1</sub>, and it is dropped at inference. There is no multi-step latent rollout and nothing to inspect. Yesterday's credit-assignment problem across 300 steps is still unsolved here. This is a local, dense "is this step good" signal, conceptually close to a <i>learned process reward for candidate actions</i>.</li>
+<li><b>Training data is cheap if you already log trajectories.</b> You need (s<sub>t</sub>, g, H<sub>t</sub>, the agent's K candidates, the matched label, s<sub>t+1</sub>) with frozen-encoder embeddings of s<sub>t</sub>, s<sub>t+1</sub>. No pixel decoder and no diffusion training. Candidates must come from <i>your</i> proposer's distribution, since the judge learns its failure modes.</li>
+<li><b>Scope check.</b> All evaluations are mobile (Android). Desktop and web screens are larger and denser, and their transitions may differ in kind, so treat the gains as a hypothesis for desktop computer-use, not a result.</li>
+</ol></div>
+
+<h2>12. Key takeaways</h2>
+<div class="card note"><ol>
+<li>Render-and-Re-Perceive pays twice: K generative renders plus K re-perceptions per step. It also forces the model to reconstruct appearance that the decision does not need.</li>
+<li>GUI transitions are discontinuous, unlike flow-continuous video. Under a pointwise loss with many plausible outcomes, the conditional-mean prediction collapses toward the current screen (the identity shortcut), and it gets worse as transitions grow.</li>
+<li>Latent reformulation: one LoRA-LMM state h<sub>t</sub> over the goal, screen, history, and shuffled candidates feeds an ActionHead (listwise CE over index logits) and a TransitionHead (predicts a frozen-encoder embedding of s<sub>t+1</sub>).</li>
+<li>The action-aware InfoNCE uses z<sub>t</sub> as a negative (anti-copy) and a FIFO bank of other transitions as negatives (anti-generic), which yields action-specific consequence features.</li>
+<li>ℒ = ℒ<sub>Action</sub> + λℒ<sub>Transition</sub>. The transition head is dropped at inference, and scoring is a single forward pass, gated by agent confidence.</li>
+<li>Limits: it only reranks (bounded by candidate coverage), the gate lets confident errors through, and foresight is one step with no rollout.</li>
+</ol></div>
+
+<h2>13. Quiz</h2><div id="quiz"></div><p id="score" style="font-weight:600"></p>
+
+<h2>14. Sources</h2>
+<ul>
+<li>Yu, Choi, Park, Shin, Shim (2026). <a href="https://arxiv.org/abs/2610.14228">Latent World Action Model for GUI Agents</a> (arXiv:2610.14228) · <a href="https://arxiv.org/html/2610.14228">HTML</a> · <a href="https://github.com/sjyu001/latent2world">Code</a> · <a href="https://hchoi256.github.io/projects/latent2world/">Project page</a></li>
+<li>Zheng et al. (2026). <a href="https://arxiv.org/abs/2602.09856">Code2World: A GUI World Model via Renderable Code Generation</a> (arXiv:2602.09856). Renderable-HTML baseline</li>
+<li>Xu et al. (2026). <a href="https://arxiv.org/abs/2605.10347">How Mobile World Model Guides GUI Agents?</a> (arXiv:2605.10347). Diffusion-screenshot baseline and gating protocol</li>
+<li>Cao et al. (2026). <a href="https://arxiv.org/abs/2601.04035">MobileDreamer: Generative Sketch World Model for GUI Agent</a> (arXiv:2601.04035). Textual-sketch world model</li>
+<li>Chen et al. (2026). <a href="https://arxiv.org/abs/2606.15768">LaWAM: Latent World Action Models for Efficient Dynamics-Aware Robot Policies</a> (arXiv:2606.15768). Latent world-action modeling in embodied settings</li>
+<li>Rawles et al. (2025). <a href="https://arxiv.org/abs/2405.14573">AndroidWorld: A Dynamic Benchmarking Environment for Autonomous Agents</a> (arXiv:2405.14573) · Li et al. (2024). <a href="https://arxiv.org/abs/2406.03679">On the Effects of Data Scale on UI Control Agents</a> (AndroidControl, arXiv:2406.03679)</li>
+<li>Background on the contrastive machinery: van den Oord, Li, Vinyals (2018). <a href="https://arxiv.org/abs/1807.03748">Representation Learning with Contrastive Predictive Coding</a> (InfoNCE) · He et al. (2019). <a href="https://arxiv.org/abs/1911.05722">Momentum Contrast</a> (FIFO negative queue)</li>
+<li>Previous lessons: <a href="2026-10-14-credit-assignment-process-rewards.html">Credit assignment</a> · <a href="2026-10-13-osworld2-long-horizon.html">OSWorld 2.0 long-horizon</a> · <a href="2026-10-11-screen-grounding.html">Screen grounding</a></li>
+</ul>
+
+<script>
+const $=id=>document.getElementById(id);
+
+// ---- 4. identity shortcut toy
+function rOf(psi,K){return Math.sqrt(psi*psi+(1-psi*psi)/K);}
+function Kof(m,c){return 1+c*Math.pow(10*m,2);}
+function simShort(){
+  const m=+$('m').value/100,c=+$('c').value/100,pp=+$('pp').value/100,pl=+$('pl').value/100;
+  $('mv').textContent=m.toFixed(2);$('cv').textContent=c.toFixed(2);$('ppv').textContent=pp.toFixed(2);$('plv').textContent=pl.toFixed(2);
+  const K=Kof(m,c),rp=rOf(pp,K),rl=rOf(pl,K);
+  const v=[1-rp,1-rl,1-rl];
+  ['1','2','3'].forEach((k,i)=>{$('b'+k).style.width=(v[i]*100).toFixed(1)+'%';});
+  $('s1').textContent=`${(v[0]*100).toFixed(0)}% of the real change lost; predicted change ≈ ${(rp*m).toFixed(3)} vs real ${m.toFixed(3)}`;
+  $('s2').textContent=`${(v[1]*100).toFixed(0)}% lost; predicted change ≈ ${(rl*m).toFixed(3)}`;
+  $('s3').textContent=`copy collapse ≈ 0; direction alignment ≈ ${rl.toFixed(2)} (ambiguity ${(v[2]*100).toFixed(0)}%)`;
+  const flag=(m>=0.08&&rp*m<0.08)?' Under a paper-style rule (real change ≥ 0.08 but predicted change < 0.08), the pixel prediction here would be flagged as an identity shortcut.':'';
+  $('tz').textContent=`K(m) ≈ ${K.toFixed(1)} plausible outcomes. Pixel conditional-mean keeps ${(rp*100).toFixed(0)}% of the change; latent keeps ${(rl*100).toFixed(0)}%.`+flag;
+  // plot
+  const W=640,H=210,L=40,R=10,T=12,B=30,pw=W-L-R,ph=H-T-B;
+  let s=`<line x1="${L}" y1="${T+ph}" x2="${L+pw}" y2="${T+ph}" stroke="#999"/><line x1="${L}" y1="${T}" x2="${L}" y2="${T+ph}" stroke="#999"/>`;
+  s+=`<text x="${L+pw/2-60}" y="${H-6}">transition magnitude m →</text><text x="2" y="${T+10}">1.0</text><text x="8" y="${T+ph}">0</text>`;
+  [0.08,0.24].forEach(x=>{s+=`<line x1="${L+x*pw}" y1="${T}" x2="${L+x*pw}" y2="${T+ph}" stroke="#ddd" stroke-dasharray="3,3"/>`;});
+  s+=`<text x="${L+0.02*pw}" y="${T+ph-4}" fill="#999">weak</text><text x="${L+0.12*pw}" y="${T+ph-4}" fill="#999">medium</text><text x="${L+0.5*pw}" y="${T+ph-4}" fill="#999">strong</text>`;
+  const curves=[[pp,'#d64545','pixel pointwise'],[pl,'#e0a100','latent pointwise']];
+  curves.forEach(([psi,col,name],ci)=>{let d='';for(let i=0;i<=100;i++){const x=i/100,y=1-rOf(psi,Kof(x,c));d+=(i?'L':'M')+(L+x*pw).toFixed(1)+','+(T+ph-y*ph).toFixed(1);}
+    s+=`<path d="${d}" fill="none" stroke="${col}" stroke-width="2.5"/><text x="${L+12}" y="${T+14+ci*14}" fill="${col}">${name}: copy loss</text>`;});
+  s+=`<line x1="${L}" y1="${T+ph-1}" x2="${L+pw}" y2="${T+ph-1}" stroke="#3aa55b" stroke-width="2.5"/><text x="${L+12}" y="${T+42}" fill="#3aa55b">contrastive: copy ≈ 0</text>`;
+  s+=`<line x1="${L+m*pw}" y1="${T}" x2="${L+m*pw}" y2="${T+ph}" stroke="#4f7cff" stroke-width="1.5"/>`;
+  $('plot').innerHTML=s;
+}
+['m','c','pp','pl'].forEach(i=>$(i).oninput=simShort);simShort();
+
+// ---- 6. InfoNCE calculator
+const PRE={copy:[80,95,40,384,7],generic:[80,30,75,384,7],spec:[90,30,35,384,7]};
+function simNCE(){
+  const cp=+$('cp').value/100,ct=+$('ct').value/100,cb=+$('cb').value/100,nb=+$('nb').value,tau=+$('tau').value/100;
+  $('cpv').textContent=cp.toFixed(2);$('ctv').textContent=ct.toFixed(2);$('cbv').textContent=cb.toFixed(2);$('nbv').textContent=nb;$('tauv').textContent=tau.toFixed(2);
+  const mx=Math.max(cp,ct,cb)/tau;
+  const ep=Math.exp(cp/tau-mx),et=Math.exp(ct/tau-mx),eb=nb*Math.exp(cb/tau-mx);
+  const Z=ep+et+eb,Pp=ep/Z,Pt=et/Z,Pb=eb/Z,loss=-Math.log(Pp);
+  $('bp').style.width=(Pp*100)+'%';$('sp').textContent=(Pp*100).toFixed(1)+'%';
+  $('bt').style.width=(Pt*100)+'%';$('st').textContent=(Pt*100).toFixed(1)+'%';
+  $('bb').style.width=(Pb*100)+'%';$('sb').textContent=(Pb*100).toFixed(1)+'%';
+  let dom=Pp>0.9?'loss nearly satisfied: little gradient':(Pt>Pb?'dominant push: AWAY FROM CURRENT SCREEN (anti-identity)':'dominant push: AWAY FROM OTHER FUTURES (anti-generic)');
+  $('lz').textContent=`L_Transition = ${loss.toFixed(3)}   |   pull toward z_t+1 ∝ (1−P+) = ${(1-Pp).toFixed(3)}   |   ${dom}`;
+}
+['cp','ct','cb','nb','tau'].forEach(i=>$(i).oninput=simNCE);
+document.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{const p=PRE[b.dataset.p];['cp','ct','cb','nb','tau'].forEach((k,i)=>$(k).value=p[i]);simNCE();});
+simNCE();
+
+// ---- 8. worked example
+const WX={
+ wx1:'For the goal "reply to Alex", A (Send) is the right move even though it lands on a login page. The auth wall is on the path to success: credentials come next, then the send completes. B leaves compose without sending, and C makes no progress. The decision depends on about three bits: did we leave compose, was anything sent or persisted, and what is required next. None of these needs the logo or field layout.',
+ wx2:'Change the goal to "save it as a draft, don\'t send" and B becomes correct, while A is now dangerous: after re-auth the message would go out, which is irreversible. The latent for A (auth wall, send pending) is the same, but the goal makes it bad. That is why scoring conditions on g together with the predicted consequence, and why foresight matters most for irreversible actions.',
+ wx3:'A is the strongest transition: almost nothing on the login page is in s_t. A pixel predictor under a pointwise loss is most tempted to output "compose screen, slightly changed", which tells the scorer that Send kept you composing. A scorer that re-perceives that render can be confidently misled. The contrastive latent is explicitly penalized for staying near z_t and for matching generic futures (such as B\'s "back to inbox"), so it has to encode the auth-wall consequence specific to A.'
+};
+['wx1','wx2','wx3'].forEach(k=>$(k).onclick=()=>{$('wxo').textContent=WX[k];});
+
+// ---- 10. gate toy
+// [conf, top1Correct, correctInCandidates, judgeRight]
+const GS=[[0.97,1,1,1],[0.62,0,1,1],[0.88,1,1,1],[0.55,1,1,0],[0.71,0,1,1],[0.93,1,1,1],[0.48,0,1,1],[0.99,1,1,1],[0.96,0,1,1],[0.83,0,1,1],[0.66,0,0,0],[0.91,1,1,1]];
+function simGate(){
+  const th=+$('gth').value/100;$('gthv').textContent=th>1?'always rescore':th.toFixed(2);
+  let calls=0,ok=0,fixed=0,broke=0,bypassErr=0,absent=0;const box=$('gsr');box.innerHTML='';
+  GS.forEach((g,i)=>{const[cf,top,inc,jr]=g;const inv=cf<th;let res,txt;
+    if(!inv){res=top;txt=top?'✓ kept correct top-1':'✗ confident error bypassed gate';if(!top)bypassErr++;}
+    else{calls++;if(!inc){res=0;txt='✗ correct action absent: judge cannot recover';absent++;}
+      else{res=jr;if(jr&&!top){txt='✓ judge FIXED agent error';fixed++;}else if(!jr&&top){txt='✗ judge overrode correct top-1';broke++;}else txt=jr?'✓ judge confirmed':'✗ judge wrong';}}
+    if(res)ok++;
+    const d=document.createElement('div');d.className='gs';
+    d.innerHTML=`<span>${i+1}</span><span class="mono">${cf.toFixed(2)}</span><span>${top?'correct':'<b style="color:#d64545">wrong</b>'}${inc?'':' <span class="pill">GT absent</span>'}</span><span>${inv?'<span class="pill" style="background:#e3f7e8">rescore</span>':'<span class="pill">bypass</span>'}</span><span>${txt}</span>`;
+    box.appendChild(d);});
+  const base=GS.filter(g=>g[1]).length;
+  $('gsum').textContent=`Step accuracy ${ok}/12 (agent alone ${base}/12) · judge calls ${calls}/12 · fixed ${fixed} · broke ${broke} · confident errors bypassed ${bypassErr} · unrecoverable (absent) ${absent}`;
+}
+$('gth').oninput=simGate;simGate();
+
+// ---- 13. quiz: conceptual, shuffled
+const Q=[
+["A pixel GUI world model trained with a pointwise reconstruction loss keeps predicting screens close to the current one, and this gets worse as real transitions get larger. What is the best mechanistic explanation?",
+["Large transitions have more pixels, so the model runs out of capacity and truncates its output","Pointwise losses are minimized by the conditional mean; when a large transition has many weakly-constrained outcomes, their differences average out and the shared component, the current screen, dominates","Diffusion models are trained on natural video and therefore cannot render text","Large transitions are rarer in training data, so the model never sees them"],
+1,"The minimizer of L2 or 1−cos is E[s_{t+1}|s_t,a]. More plausible outcomes means more cancellation of idiosyncratic content, so the mean drifts toward what every outcome shares, which is the present screen. Small, near-deterministic transitions don't suffer this."],
+["For one decision step with K candidates, what does Render-and-Re-Perceive need at inference that the latent method avoids?",
+["Running the base agent to propose candidates","K generative rollouts of future screens plus K scorer passes that re-perceive each rendered future, versus one forward pass that scores all K candidates from a shared state","Computing the InfoNCE loss against a memory bank","Encoding the current screenshot"],
+1,"Both methods use the same proposer and both read s_t. Render-and-Re-Perceive adds K generations (diffusion denoising or long HTML decoding) and K re-perceptions. The latent method drops the transition head and reads K index logits from one prefill."],
+["On a filter sheet, 'Sort: Most popular' and 'Sort: Closest' lead to next screens that differ only in which option is highlighted. Why is a contrastive loss with only the current state z_t as negative insufficient here?",
+["Because z_t is always identical to z_{t+1} for sort actions","Both predictions can satisfy 'be far from z_t' by moving in the same generic 'something changed' direction; negatives drawn from other transitions are needed so the prediction must match this action's specific future","Because InfoNCE requires at least 2 positives","Because the temperature τ cancels out with a single negative"],
+1,"The z_t negative is anti-copy, and the bank negatives are anti-generic. Without competing futures, nothing forces the predicted latent to separate between two actions whose outcomes both differ from the source state."],
+["Why does the method place all K candidates in one prompt in randomly permuted order and predict the next state from the shared final-token state h_t?",
+["To reduce the number of image tokens","So that, to predict the annotated action's future, h_t must encode which candidate is correct and what it leads to, instead of exploiting a fixed position prior such as 'index 0 is the agent's favorite'","Because LoRA cannot be applied to per-candidate tokens","To make the transition head usable at inference"],
+1,"The transition target is the future of the annotated action. With shuffled order and a single shared vector, the only way to predict it is to identify that candidate and model its consequence, which couples world-model supervision to the features the action head reads."],
+["On some hard steps the correct action never appears among the K candidates from the base agent. What happens to those steps under the latent world-action model?",
+["The transition head generates the missing action from the predicted latent","They remain failures: the model only re-ranks proposals, so performance is bounded by candidate coverage","The contrastive bank supplies the missing action","The confidence gate routes those steps to a pixel world model"],
+1,"It is a reranker. Fixes have to come upstream: more diverse sampling, adaptive K, better proposers. During training those steps are labeled with the agent's own top candidate, which teaches the model to keep the agent's decision rather than invent one."],
+["The transition head is discarded at inference. What is the main trade-off of that choice?",
+["The action head can no longer be trained","Zero inference cost for foresight, but the predictive benefit lives only implicitly in h_t: no inspectable predicted future and no multi-step latent rollout for longer-horizon evaluation","Accuracy drops to the base agent's level","The model must regenerate pixels instead"],
+1,"Prediction acts as a training-time regularizer on the shared representation. You get speed, but you can't roll out k steps ahead or show a human what the model expected. The paper lists both as limitations."],
+["You deploy the judge behind a confidence gate (rescore only when the agent is unsure). Which failure is the gate structurally unable to catch, and what is the natural fix for irreversible actions?",
+["Low-confidence errors; fix by lowering the threshold","High-confidence agent errors bypass rescoring; for irreversible actions (send, pay, delete) force rescoring regardless of confidence or learn an uncertainty-aware invocation policy","Errors where candidates are duplicated; fix by increasing τ","Grounding errors; fix by adding the transition head back"],
+1,"The gate trades compute for coverage. Calibrated proposer confidences make it work, and overconfident mistakes slip through. The paper suggests learned invocation; for irreversible actions it is natural to always pay for one judge pass."]
+];
+Q.forEach(q=>{const c=q[1][q[2]];const o=q[1].slice();for(let i=o.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[o[i],o[j]]=[o[j],o[i]];}q[1]=o;q[2]=o.indexOf(c);});
+for(let i=Q.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[Q[i],Q[j]]=[Q[j],Q[i]];}
+let scr=0,ans=0;const qz=$('quiz');
+Q.forEach((q,i)=>{const d=document.createElement('div');d.className='q card';d.innerHTML=`<b>Q${i+1}. ${q[0]}</b>`;const ex=document.createElement('div');ex.className='exp';
+q[1].forEach((o,j)=>{const b=document.createElement('button');b.textContent=o;b.onclick=()=>{if(d.dataset.done)return;d.dataset.done=1;ans++;
+if(j===q[2]){b.className='ok';scr++;}else{b.className='bad';d.querySelectorAll('button')[q[2]].className='ok';}
+ex.textContent=(j===q[2]?'✓ Correct. ':'✗ Not quite. ')+q[3];$('score').textContent=`Score: ${scr}/${ans} answered (of ${Q.length})`;};d.appendChild(b);});
+d.appendChild(ex);qz.appendChild(d);});
+</script></body></html>
