@@ -1,0 +1,389 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KV caching &amp; prefill/decode for multimodal computer-use agents</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<style>
+body{font-family:Inter,system-ui,sans-serif;max-width:900px;margin:0 auto;padding:24px;color:#1d2433;line-height:1.6;background:#fafbfc}
+h1{font-size:2rem;margin-bottom:4px}h2{border-bottom:2px solid #e3e7ee;padding-bottom:4px;margin-top:40px}h3{margin-bottom:4px}
+code,.mono{font-family:'JetBrains Mono',monospace;font-size:.9em;background:#eef1f6;padding:1px 4px;border-radius:4px}
+.card{background:#fff;border:1px solid #e3e7ee;border-radius:10px;padding:16px 20px;margin:16px 0}
+.note{border-left:4px solid #4f7cff;background:#f2f6ff}.warn{border-left:4px solid #e0a100;background:#fff9e8}.mine{border-left:4px solid #8a5cf6;background:#f6f2ff}.badbox{border-left:4px solid #d64545;background:#fdf2f2}
+table{border-collapse:collapse;width:100%;font-size:.92em}td,th{border:1px solid #e3e7ee;padding:6px 8px;text-align:left;vertical-align:top}th{background:#f3f5f9}
+.ctl{display:flex;gap:16px;flex-wrap:wrap;margin:10px 0;align-items:center}
+.ctl label{font-size:.92em}input[type=range]{vertical-align:middle;width:170px}
+.bar{height:22px;border-radius:6px;background:#e9ecf2;position:relative;overflow:hidden;margin:4px 0}
+.bar>div{height:100%;transition:width .2s}.bar>span{position:absolute;left:8px;top:1px;font-size:.85em;font-weight:600;color:#111}
+.q{margin:14px 0}.q button{display:block;margin:4px 0;text-align:left;width:100%;padding:8px;border:1px solid #cfd6e2;border-radius:6px;background:#fff;cursor:pointer;font:inherit}
+.q button.ok{background:#e3f7e8;border-color:#3aa55b}.q button.bad{background:#fde8e8;border-color:#d64545}.exp{font-size:.9em;color:#444;margin-top:4px}
+details{background:#f7f8fb;border:1px dashed #c9d1de;border-radius:8px;padding:8px 12px;margin:10px 0}summary{cursor:pointer;font-weight:600}
+.btn{padding:8px 14px;border-radius:8px;border:1px solid #4f7cff;background:#4f7cff;color:#fff;font:inherit;cursor:pointer}.btn.sec{background:#fff;color:#4f7cff}
+.pill{display:inline-block;font-size:.78em;padding:1px 8px;border-radius:999px;background:#eef1f6;margin-right:4px}
+.eq{font-family:'JetBrains Mono',monospace;background:#f3f5f9;padding:12px 14px;border-radius:8px;overflow-x:auto;margin:10px 0;font-size:.88em;line-height:1.7}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.grid2>div{background:#f7f8fb;border-radius:8px;padding:10px;font-size:.9em}
+@media(max-width:700px){.grid2{grid-template-columns:1fr}}
+.obj li{margin:4px 0}
+.flip{perspective:800px;cursor:pointer;min-height:88px;margin:8px 0}
+.flip-inner{position:relative;width:100%;min-height:88px;transition:transform .45s;transform-style:preserve-3d}
+.flip.on .flip-inner{transform:rotateY(180deg)}
+.flip-f,.flip-b{position:absolute;inset:0;backface-visibility:hidden;border:1px solid #e3e7ee;border-radius:10px;padding:12px 14px;background:#fff}
+.flip-b{transform:rotateY(180deg);background:#f2f6ff;border-color:#4f7cff}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.85em;margin:6px 0}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:middle}
+</style></head><body><nav id="dal-nav" style="position:sticky;top:0;z-index:9999;display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;background:#111827;font:600 15px/1.2 system-ui,sans-serif"><a href="../" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">← Home</a><a href="../archive.html" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">Archive</a><a href="../review.html" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">Review</a></nav>
+<h1>KV caching &amp; prefill/decode for multimodal computer-use agents</h1>
+<p style="color:#667">Track: <b>fundamentals</b> · Lesson for Siddhant · Oct 16, 2026 · ~15 min</p>
+
+<div class="card note">
+<b>Learning objectives.</b> By the end you should be able to:
+<ul class="obj">
+<li>Derive why causal self-attention without a KV cache redoes O(n²) work on every decode step, and how caching drops per-step attention to O(n).</li>
+<li>Separate <b>prefill</b> (parallel over the prompt) from <b>decode</b> (sequential, memory-bandwidth heavy) and estimate which dominates an agent step.</li>
+<li>Compute KV-cache bytes from L, H<sub>kv</sub>, d<sub>head</sub>, n and explain why GQA/MQA help decode more than prefill.</li>
+<li>Predict how screenshot tokenization blows up n in computer-use loops, and choose harness policies (truncate / summarize / prefix-cache / page) that keep grounding without cubic cost in horizon.</li>
+</ul>
+</div>
+
+<div class="card note"><b>Callback / retrieval warm-up.</b> Answer in your head before reading on:
+<ol>
+<li>Yesterday (latent world-action models): why did Render-and-Re-Perceive blow latency per decision? What did dropping the transition head at inference buy?</li>
+<li>Tuesday (OSWorld 2.0): a 300-step trajectory keeps adding screenshots + tool traces. What happens to context length if you naively re-send everything each step?</li>
+<li>Oct 14 (credit assignment): denser process rewards help learning — but denser <i>logs</i> (every screenshot, every tool dump) hurt something else at inference. What?</li>
+<li>Oct 11 (screen grounding): why can you not simply delete all image tokens and keep only text captions?</li>
+</ol>
+<details><summary>Check yourself</summary>(1) K generative renders + K re-perceive passes; latent scoring removes that multiply. (2) n grows ~linearly with horizon → prefill attention ~n² per step → total cost can scale like ~H³ without caching. (3) Latency, memory, and $ — the KV cache and prefill bill. (4) Grounding needs pixels (or equivalent dense visual tokens) for precise clicks; captions lose spatial detail. Today's lesson is the systems half of that tension: keep the pixels you need, cache what you can, and stop re-paying quadratic attention for free.</details></div>
+
+<div class="card warn"><b>Hook.</b> A computer-use agent loop is mostly <i>not</i> "think hard once." It is: encode a fat multimodal prompt (system + tools + history + latest screenshot) → sample a short action → observe → repeat. Wall-clock and cost are dominated by how you treat that prompt across steps: whether you <b>prefill</b> from scratch, whether you <b>reuse a KV cache</b>, and how fast n grows when each screenshot is hundreds–thousands of tokens. If you only optimize the policy head and ignore prefill/decode asymmetry, OSWorld-scale horizons will feel "mysteriously" slow even when the model is "smart enough."</div>
+
+<h2>1. Intuition first: why recompute K and V?</h2>
+<div class="card note">
+Causal self-attention at position i needs keys and values for all positions ≤ i. In training (or a fresh prefill) you compute K and V for every token in parallel. In autoregressive decode you add <b>one</b> new token. Without a cache you would rebuild K,V for the entire prefix on every step — almost all of that work is identical to the previous step. The fix is trivial in concept and consequential in production: <b>write K,V once, read them forever after</b> (appending the new token's K,V each step).
+</div>
+<p>Standard scaled dot-product attention (Vaswani et al., 2017):</p>
+<div class="eq">Attention(Q, K, V) = softmax( Q K<sup>⊤</sup> / √d<sub>head</sub> ) V</div>
+<p>For one new query row q<sub>t</sub> ∈ ℝ<sup>d</sup> against cached K,V ∈ ℝ<sup>n×d</sup>:</p>
+<div class="eq">scores = q<sub>t</sub> K<sup>⊤</sup> / √d<sub>head</sub> &nbsp;∈ ℝ<sup>n</sup><br>
+out = softmax(scores) V &nbsp;∈ ℝ<sup>d</sup></div>
+<p>That is <b>O(n · d)</b> matvec work per head (per layer), not O(n² · d). The quadratic term appears when you have n queries at once (prefill).</p>
+
+<div class="q card" id="cc1"><b>Concept check.</b> If you decode T tokens <i>without</i> a KV cache, roughly how does attention cost scale vs with a cache?</div>
+
+<h2>2. Prefill vs decode — two different machines</h2>
+<p>Pope et al. (MLSys 2023, "Efficiently Scaling Transformer Inference") separate inference into:</p>
+<ul>
+<li><b>Prefill:</b> all prompt tokens are present → one parallel forward over length n. Attention builds an n×n (causal) score matrix: ~O(n² d) per layer (plus the usual O(n · params) dense matmuls). Output: logits for the first generated token <i>and</i> a full KV cache.</li>
+<li><b>Decode:</b> loop of T steps; each step feeds one token, reads the KV cache, appends one new K,V row. Attention per step ~O(n d); after T steps the cache length is n+T and total attention work ~O(T · n · d) (more precisely Σ<sub>i=0</sub><sup>T−1</sup> O((n+i)d)).</li>
+</ul>
+<div class="grid2">
+<div><b>Prefill character.</b> Compute-friendly: large matmuls, high arithmetic intensity when n or batch is large. Weight loads amortized over many tokens. FlashAttention (Dao et al., 2022) mainly helps here by cutting HBM traffic for the n×n attentions.</div>
+<div><b>Decode character.</b> Memory-bandwidth bound at small batch: every step reloads weights (and a growing KV cache) to produce one token. MQA/GQA and KV quantization matter most here. Speculative decoding (Leviathan et al., 2023) attacks the sequential token loop, not prefill.</div>
+</div>
+<div class="eq">
+Rough attention FLOPs (one layer, one head, ignore constants):<br>
+Prefill ≈ c · n² · d<sub>head</sub><br>
+Decode (T steps, cache starts at n) ≈ c · Σ<sub>i=0</sub><sup>T−1</sup> (n+i) · d<sub>head</sub> ≈ c · (T n + T²/2) · d<sub>head</sub>
+</div>
+<p>For agent actions, T is often tiny (a click JSON, a short plan line) while n is huge (screenshots + history). Then <b>prefill dominates</b> unless you incremental-cache. For long chain-of-thought dumps, decode catches up.</p>
+
+<div class="q card" id="cc2"><b>Concept check.</b> You have a warm prefix cache of 8k tokens, append a 2k-token screenshot, then decode 40 tokens of tool call. What work is new?</div>
+
+<h2>3. Interactive: FLOPs vs KV memory vs screenshots</h2>
+<div class="card">
+<p>Toy cost model (mine, for scaling intuition — not a profiler). Attention-only prefill proxy = α · n²; decode proxy = α · Σ (n+i) over T steps; KV bytes = 2 · L · H<sub>kv</sub> · d<sub>head</sub> · n · b, with b=2 for fp16. Dense FFN FLOPs (~2N per token) are omitted so you can see the <b>attention asymmetry</b>; in real large models FFN often dominates absolute FLOPs, but KV <i>bandwidth</i> and <i>capacity</i> still decide decode latency and max batch (Pope et al.).</p>
+<div class="ctl">
+<label>Text/history tokens: <input type="range" id="nt" min="500" max="32000" step="500" value="4000"> <b id="ntv"></b></label>
+<label># screenshots: <input type="range" id="ns" min="0" max="40" value="4"> <b id="nsv"></b></label>
+<label>Tokens / screenshot: <input type="range" id="st" min="85" max="4000" step="5" value="765"> <b id="stv"></b></label>
+</div>
+<div class="ctl">
+<label>Decode steps T: <input type="range" id="Td" min="1" max="512" value="64"> <b id="Tdv"></b></label>
+<label>Layers L: <input type="range" id="L" min="8" max="80" value="32"> <b id="Lv"></b></label>
+<label>KV heads H<sub>kv</sub>: <input type="range" id="Hkv" min="1" max="64" value="8"> <b id="Hkvv"></b></label>
+<label>d<sub>head</sub>: <input type="range" id="dh" min="64" max="256" step="64" value="128"> <b id="dhv"></b></label>
+</div>
+<div class="ctl">
+<label><input type="checkbox" id="nocache"> Naive: re-prefill full context every agent step (no prefix cache), horizon = #screenshots</label>
+</div>
+<div class="legend"><i style="background:#4f7cff"></i>Prefill attention proxy &nbsp; <i style="background:#d64545"></i>Decode attention proxy &nbsp; <i style="background:#8a5cf6"></i>KV memory</div>
+<div>Prefill attention (relative)<div class="bar"><div id="bp" style="background:#4f7cff"></div><span id="sp"></span></div></div>
+<div>Decode attention (relative)<div class="bar"><div id="bd" style="background:#d64545"></div><span id="sd"></span></div></div>
+<div>KV cache size<div class="bar"><div id="bm" style="background:#8a5cf6"></div><span id="sm"></span></div></div>
+<svg id="barsvg" viewBox="0 0 640 180" style="width:100%;background:#fbfcfe;border:1px solid #eef1f6;border-radius:8px;margin-top:8px"></svg>
+<p id="vz" style="font-size:.92em"></p>
+<p style="font-size:.9em;color:#555">Try: set screenshots=1, tokens/shot=765 (GPT-4o-style high-detail tile count for many 1024-class images), T=50 — prefill wins. Raise T to 400 — decode climbs. Then enable naive re-prefill and raise screenshots toward 20 — total prefill proxy explodes (~Σ t²). Drop H<sub>kv</sub> from 32→1 (MQA): memory collapses; the attention FLOP proxies barely move (they ignore H<sub>kv</sub> here on purpose).</p>
+</div>
+
+<h2>4. Memory: the KV cache formula</h2>
+<p>Per sequence (batch=1), storing keys and values:</p>
+<div class="eq">KV_bytes ≈ 2 × L × H<sub>kv</sub> × d<sub>head</sub> × n × bytes_per_elem</div>
+<p>For classical multi-head attention (MHA), H<sub>kv</sub> = H<sub>q</sub> and often H<sub>q</sub> · d<sub>head</sub> = d<sub>model</sub>, so</p>
+<div class="eq">KV_bytes ≈ 2 × L × d<sub>model</sub> × n × bytes_per_elem</div>
+<p><b>Worked example.</b> L=32, d<sub>model</sub>=4096, fp16 (2 bytes), MHA:</p>
+<div class="eq">bytes/token = 2 × 32 × 4096 × 2 = 524,288 ≈ 0.5 MiB/token<br>
+n = 8,192 → KV ≈ 4 GiB &nbsp;&nbsp;|&nbsp;&nbsp; n = 32,768 → KV ≈ 16 GiB</div>
+<p>Switch to GQA with H<sub>kv</sub> = H<sub>q</sub>/8 (same d<sub>head</sub>): multiply by 1/8 → ~0.5 GiB at 8k, ~2 GiB at 32k. MQA (H<sub>kv</sub>=1) is the extreme (Shazeer, 2019); GQA interpolates (Ainslie et al., 2023).</p>
+<div class="card mine"><b>Why MQA shrinks memory more than prefill FLOPs.</b> Cache capacity and decode bandwidth scale with H<sub>kv</sub>. Prefill FLOPs for an N-parameter model are still ~2N per token from dense projections; attention is often a minority of FLOPs for wide FFNs (Pope et al.). So MQA/GQA are primarily <i>decode / memory</i> optimizations — exactly where interactive agents live between short tool calls.</div>
+
+<h2>5. Multimodal token blowup</h2>
+<p>Text history is cheap compared to screenshots. Two public mental models:</p>
+<ul>
+<li><b>ViT-style patches:</b> a 1024×768 frame with 14×14 patches is on the order of (1024/14)×(768/14) ≈ 73×55 ≈ <b>~4k patch tokens</b> before any merger/resampler. High-res tiling used by computer-use / UI agents can be in the same ballpark or higher.</li>
+<li><b>API tile metering (GPT-4o / gpt-4.1 family, detail=high):</b> scale so the short side is ≤768, cover with 512×512 tiles, cost ≈ 85 + 170 × (#tiles). A 1024×768 image → 2×2 tiles → <b>85+680=765 tokens</b> (OpenAI vision docs). detail=low is a flat 85 — useless for precise grounding.</li>
+</ul>
+<p><b>Agent arithmetic.</b> Suppose each step adds one 765-token screenshot + 200 tokens of text/tools, and you keep raw history for H=30 steps with no compression:</p>
+<div class="eq">n ≈ n<sub>0</sub> + 30 × (765+200) ≈ n<sub>0</sub> + 28,950</div>
+<p>Every <i>full</i> re-prefill pays ~O(n²) attention. Summed over the trajectory without prefix reuse:</p>
+<div class="eq">Σ<sub>t=1</sub><sup>H</sup> O(n<sub>t</sub>²) with n<sub>t</sub>≈t·S &nbsp;⇒&nbsp; O(S² H³)</div>
+<p>That is the systems twin of OSWorld's long-horizon pain: not only do errors compound (Oct 13) — <b>compute compounds</b> if the harness is naive.</p>
+
+<div class="q card" id="cc3"><b>Concept check.</b> You need clickable coordinates on the <i>current</i> UI. Which history policy preserves grounding while attacking O(S² H³)?</div>
+
+<h2>6. Agent loops: cache reuse, truncation, summarization</h2>
+<div class="card mine"><p><i>Engineering synthesis for harness design.</i></p>
+<ol>
+<li><b>Static prefix caching.</b> System prompt, tool schemas, and few-shot demos are identical across steps and often across sessions. Servers that hash and reuse KV for shared prefixes (vLLM PagedAttention can share blocks across requests) turn that into free memory and skipped prefill.</li>
+<li><b>Incremental append.</b> After the first prefill, new observation tokens should <i>extend</i> the cache, not rebuild it. Continuous batching interleaves many sequences' decode steps while others prefill.</li>
+<li><b>Latest screen high-fidelity; old screens summarized.</b> Grounding (Oct 11) needs pixels <i>now</i>. Older frames are usually better as a textual ledger ("opened Chrome; navigated to …; modal: Cookie consent dismissed") than as another 765–4k tokens each.</li>
+<li><b>Truncate with attention sinks / sliding windows</b> when you must bound n: keep early "sink" tokens + recent window (streaming LLM literature). Risk: lose constraints stated mid-trajectory — pair with an explicit state ledger.</li>
+<li><b>Summarize vs truncate.</b> Summarization is lossy compression with a model; truncation is hard deletion. For computer-use, summarize <i>actions and state</i>, truncate <i>redundant pixels</i>.</li>
+<li><b>When latent world models help (Oct 15).</b> They cut K× future renders per decision. They do <i>not</i> remove the need for prefix cache + screenshot policy on the base observe→act context.</li>
+</ol></div>
+
+<table>
+<tr><th>Lever</th><th>Helps</th><th>Trade-off</th></tr>
+<tr><td>Prefix / paged KV reuse</td><td>Skip repeated prefill; raise batch</td><td>Needs serving stack support; cache invalidation on prompt edits</td></tr>
+<tr><td>GQA / MQA</td><td>KV capacity &amp; decode bandwidth</td><td>Quality gap vs MHA (GQA usually small if uptrained)</td></tr>
+<tr><td>KV quantization (e.g. FP8/INT8)</td><td>Memory &amp; bandwidth</td><td>Long-context quality sensitivity</td></tr>
+<tr><td>FlashAttention</td><td>Prefill wall-clock / memory IO</td><td>Does not change decode's sequential nature</td></tr>
+<tr><td>Speculative decoding</td><td>Tokens/sec in decode</td><td>Extra draft model; less relevant for 20-token tool calls</td></tr>
+<tr><td>Sliding window / sinks</td><td>Hard cap on n</td><td>Can drop mid-task constraints</td></tr>
+<tr><td>History summarize</td><td>Cut S·H image tokens</td><td>Summary errors → silent state drift</td></tr>
+</table>
+
+<h2>7. PagedAttention in one paragraph</h2>
+<p>Kwon, Li, Zhuang, et al. (SOSP 2023), "Efficient Memory Management for Large Language Model Serving with PagedAttention" — treat the KV cache like virtual memory: fixed-size blocks, non-contiguous physical storage, block table per sequence. That kills external fragmentation from over-reserving max length, and enables <b>sharing identical prefix blocks</b> across requests. For an agent farm where hundreds of sessions share the same system+tool prefix, that sharing is as important as the per-request math.</p>
+
+<h2>8. How this applies to computer-use agents</h2>
+<div class="card note">
+<ul>
+<li><b>OSWorld-scale horizons (Oct 13):</b> treat context management as part of the agent. A policy that never summarizes will hit context and latency walls before it hits capability walls.</li>
+<li><b>Credit assignment (Oct 14):</b> logging every frame helps offline RL and process rewards — but the <i>online</i> inferencing path should not replay that log as raw pixels every step.</li>
+<li><b>Latent world models (Oct 15):</b> reduce speculative perception cost; still combine with KV reuse so the base loop stays cheap.</li>
+<li><b>Grounding (Oct 11):</b> budget tokens for the <i>current</i> screenshot at high fidelity; spend remaining budget on structured history, not a museum of old bitmaps.</li>
+<li><b>Measurement habit:</b> for each harness change, log n, prefill ms, decode ms/token, KV GiB. If prefill ≫ decode on 40-token actions, you have a caching/history problem, not a "model is slow" problem.</li>
+</ul>
+</div>
+
+<h2>9. Common misconceptions</h2>
+<div class="card badbox">
+<ul>
+<li><b>"Attention is always O(n²) per generated token."</b> Only if you refuse to cache K,V or you rebuild the full QK<sup>⊤</sup> every time. Decode with cache is O(n) per step.</li>
+<li><b>"KV cache is an implementation detail; FLOPs are all that matter."</b> Decode is often bandwidth-bound; cache size caps batch and context (Pope et al.).</li>
+<li><b>"MQA makes prefill dramatically cheaper."</b> Memory yes; prefill FLOPs barely — FFN still dominates for large N.</li>
+<li><b>"More screenshot history always helps the agent."</b> It helps until n explodes; then you lose real-time interactivity and may even confuse the model with stale UIs.</li>
+<li><b>"FlashAttention / speculative decoding fix agent latency end-to-end."</b> They help specific phases. Agents need harness-level prefix reuse and multimodal history policy too.</li>
+</ul>
+</div>
+
+<h2>10. One-paragraph summary</h2>
+<p>Causal LM inference splits into a parallel <b>prefill</b> that builds the KV cache at ~O(n²) attention cost and a sequential <b>decode</b> that attends with one new query against cached K,V at ~O(n) per step; computer-use agents amplify both sides because screenshots inflate n and every observation tempts a full re-prefill. KV memory scales as 2·L·H<sub>kv</sub>·d<sub>head</sub>·n·bytes, so GQA/MQA, quantization, and paged/prefix sharing are first-class agent infrastructure. Keep high-fidelity pixels for the live screen, compress older history, and measure prefill vs decode per step — that is how long-horizon GUI loops stay affordable without giving up grounding.</p>
+
+<h2>11. Spaced-repetition flashcards</h2>
+<p style="font-size:.9em;color:#555">Click a card to flip.</p>
+<div id="flash"></div>
+
+<h2>12. End quiz</h2>
+<div id="quiz"></div>
+<p id="score" style="font-weight:600"></p>
+
+<h2>13. Sources</h2>
+<ul>
+<li>Vaswani, Shazeer, Parmar, et al. (2017). <a href="https://arxiv.org/abs/1706.03762">Attention Is All You Need</a> (arXiv:1706.03762) — scaled dot-product attention.</li>
+<li>Pope, Douglas, Chowdhery, et al. (2023). <a href="https://arxiv.org/abs/2211.05102">Efficiently Scaling Transformer Inference</a> (arXiv:2211.05102, MLSys 2023) — prefill vs decode, KV memory traffic, multiquery partitioning.</li>
+<li>Shazeer (2019). <a href="https://arxiv.org/abs/1911.02150">Fast Transformer Decoding: One Write-Head Is All You Need</a> (arXiv:1911.02150) — multi-query attention.</li>
+<li>Ainslie, Lee-Thorp, de Jong, et al. (2023). <a href="https://arxiv.org/abs/2305.13245">GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints</a> (arXiv:2305.13245, EMNLP 2023).</li>
+<li>Dao, Fu, Ermon, Rudra, Ré (2022). <a href="https://arxiv.org/abs/2205.14135">FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness</a> (arXiv:2205.14135).</li>
+<li>Kwon, Li, Zhuang, et al. (2023). <a href="https://arxiv.org/abs/2309.06180">Efficient Memory Management for Large Language Model Serving with PagedAttention</a> (arXiv:2309.06180) · <a href="https://vllm.ai/blog/2023-06-20-vllm">vLLM blog</a>.</li>
+<li>Leviathan, Kalman, Matias (2023). <a href="https://arxiv.org/abs/2211.17192">Fast Inference from Transformers via Speculative Decoding</a> (arXiv:2211.17192, ICML 2023).</li>
+<li>OpenAI. <a href="https://developers.openai.com/api/docs/guides/images-vision">Images and vision</a> — tile-based image token counts (e.g. GPT-4o detail=high: 85 + 170×tiles).</li>
+<li>Prior lessons: <a href="2026-10-15-latent-world-action-gui.html">Latent world-action GUI</a> · <a href="2026-10-14-credit-assignment-process-rewards.html">Credit assignment</a> · <a href="2026-10-13-osworld2-long-horizon.html">OSWorld 2.0</a> · <a href="2026-10-11-screen-grounding.html">Screen grounding</a></li>
+</ul>
+
+<script>
+const $=id=>document.getElementById(id);
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+function mountMC(el, question, choices, correctIdx, explain){
+  const wrap=document.createElement('div');
+  wrap.innerHTML=`<b>${question}</b>`;
+  const exp=document.createElement('div'); exp.className='exp';
+  const opts=choices.map((c,i)=>({c,i}));
+  shuffle(opts);
+  opts.forEach(({c,i})=>{
+    const b=document.createElement('button'); b.textContent=c;
+    b.onclick=()=>{
+      if(wrap.dataset.done)return; wrap.dataset.done=1;
+      if(i===correctIdx){b.className='ok'; exp.textContent='✓ Correct. '+explain;}
+      else{b.className='bad'; [...wrap.querySelectorAll('button')].forEach((bb,k)=>{if(opts[k].i===correctIdx)bb.className='ok';});
+        exp.textContent='✗ Not quite. '+explain;}
+    };
+    wrap.appendChild(b);
+  });
+  wrap.appendChild(exp); el.appendChild(wrap);
+}
+
+mountMC($('cc1'),
+  'Decode T tokens from a prompt of length n. Attention cost with KV cache vs without (same layer, rough)?',
+  [
+    'With cache ~O(T n); without cache ~O(T n²) because each step rebuilds scores among all prefix tokens',
+    'Both are O(T n²) — caching only saves memory, not FLOPs',
+    'With cache ~O(n²); without ~O(T)',
+    'Caching changes softmax to argmax, so both become O(T n)'
+  ], 0,
+  'Each cached decode step is one query against n keys (O(n)). Without a cache you recompute K,V (and typically full pairwise scores) over the growing prefix every step → ~O(n²) per step × T.');
+
+mountMC($('cc2'),
+  'Warm 8k-token prefix cache; append 2k new screenshot tokens; decode 40. New work is mainly…',
+  [
+    'Re-prefill all 10k tokens from scratch, then 40 decode steps',
+    'Prefill/attend the 2k new tokens against the cached 8k (write their KV), then 40 O(n) decode steps',
+    'Only the 40 decode steps — appends are free',
+    'Only loading weights once; attention is skipped when a cache exists'
+  ], 1,
+  'Prefix reuse means the 8k KV stays. You still must run the new tokens through the model (incremental prefill) and then decode. You do not redo the whole 10k prefill.');
+
+mountMC($('cc3'),
+  'Best default history policy for a grounding-heavy GUI agent under KV pressure?',
+  [
+    'Keep every past screenshot at full fidelity forever',
+    'Delete the current screenshot first — history is more informative',
+    'Keep the latest screenshot high-fidelity; summarize or drop older screenshots; prefix-cache the static system/tool prompt',
+    'Disable KV caching so memory stays predictable'
+  ], 2,
+  'Live pixels for grounding; compressed history for long horizon; static prefix reuse for free prefill savings. Disabling the cache makes decode far worse.');
+
+// ---- interactive cost model ----
+function fmt(x){
+  if(x>=1e12)return(x/1e12).toFixed(2)+' T';
+  if(x>=1e9)return(x/1e9).toFixed(2)+' G';
+  if(x>=1e6)return(x/1e6).toFixed(2)+' M';
+  if(x>=1e3)return(x/1e3).toFixed(2)+' K';
+  return x.toFixed(0);
+}
+function sim(){
+  const nt=+$('nt').value, ns=+$('ns').value, st=+$('st').value, T=+$('Td').value;
+  const L=+$('L').value, Hkv=+$('Hkv').value, dh=+$('dh').value;
+  const naive=$('nocache').checked;
+  $('ntv').textContent=nt; $('nsv').textContent=ns; $('stv').textContent=st;
+  $('Tdv').textContent=T; $('Lv').textContent=L; $('Hkvv').textContent=Hkv; $('dhv').textContent=dh;
+  const S=st, n=nt+ns*st;
+  const alpha=1; // relative
+  let prefill, decode;
+  if(!naive){
+    prefill=alpha*n*n;
+    decode=0; for(let i=0;i<T;i++) decode+=alpha*(n+i);
+  }else{
+    // horizon H=max(ns,1): at step t context ≈ nt + t*S, re-prefill each step, plus one final decode of T
+    const H=Math.max(ns,1);
+    prefill=0;
+    for(let t=1;t<=H;t++){const nt2=nt+t*S; prefill+=alpha*nt2*nt2;}
+    const nH=nt+H*S;
+    decode=0; for(let i=0;i<T;i++) decode+=alpha*(nH+i);
+  }
+  const bytes=2*L*Hkv*dh*(naive? (nt+Math.max(ns,1)*S) : n)*2; // fp16
+  const gib=bytes/(1024**3);
+  const maxP=Math.max(prefill,decode,1);
+  $('bp').style.width=Math.min(100,prefill/maxP*100)+'%';
+  $('bd').style.width=Math.min(100,decode/maxP*100)+'%';
+  $('bm').style.width=Math.min(100,gib/16*100)+'%';
+  $('sp').textContent=fmt(prefill)+' (rel)';
+  $('sd').textContent=fmt(decode)+' (rel)';
+  $('sm').textContent=gib.toFixed(2)+' GiB';
+  const ratio=prefill/Math.max(decode,1);
+  $('vz').textContent=`n=${n.toLocaleString()} tokens. Prefill/Decode attention proxy ratio ≈ ${ratio.toFixed(2)}. KV ≈ ${gib.toFixed(2)} GiB (fp16, batch=1). `+
+    (naive?`Naive re-prefill over H=${Math.max(ns,1)} steps: Σ n_t² drives the blue bar — this is the O(S² H³) regime.`
+      :`Cached single-shot view: one prefill of n, then T decode steps.`);
+
+  const svg=$('barsvg');
+  const W=640,H=180,pad=40;
+  const vals=[prefill,decode];
+  const m=Math.max(...vals,1);
+  const labels=['Prefill','Decode'];
+  const colors=['#4f7cff','#d64545'];
+  let g=`<text x="12" y="18" fill="#555" font-size="12">Relative attention work (α·ops)</text>`;
+  vals.forEach((v,i)=>{
+    const bh=((H-pad-20)*v)/m;
+    const x=80+i*220, y=H-20-bh, w=120;
+    g+=`<rect x="${x}" y="${y}" width="${w}" height="${bh}" fill="${colors[i]}" rx="4"/>`;
+    g+=`<text x="${x+w/2}" y="${H-6}" text-anchor="middle" fill="#333">${labels[i]}</text>`;
+    g+=`<text x="${x+w/2}" y="${y-6}" text-anchor="middle" fill="#333" font-size="11">${fmt(v)}</text>`;
+  });
+  g+=`<text x="520" y="40" fill="#8a5cf6" font-size="12">KV ${gib.toFixed(2)} GiB</text>`;
+  g+=`<rect x="520" y="50" width="24" height="${Math.min(100,gib/16*100)}" fill="#8a5cf6" rx="3"/>`;
+  svg.innerHTML=g;
+}
+['nt','ns','st','Td','L','Hkv','dh','nocache'].forEach(id=>$(id).oninput=sim);
+sim();
+
+// ---- flashcards ----
+const CARDS=[
+  ['What does the KV cache store, and why?', 'Per layer, the key and value vectors for every past token, so decode can attend with one new query without recomputing K,V for the prefix.'],
+  ['Prefill vs decode asymptotics (attention)', 'Prefill ~O(n² d) to build cache; each decode step ~O(n d) against the cache; T decode steps ~O(T n d).'],
+  ['KV_bytes formula', '≈ 2 · L · H_kv · d_head · n · bytes_per_elem (× batch). MHA: H_kv=H_q; GQA/MQA shrink H_kv.'],
+  ['Why agents go cubic without caching', 'If each step t re-prefills n_t≈t·S, total attention Σ_t n_t² ~ S² H³.'],
+  ['Harness rule of thumb', 'High-fidelity latest screenshot for grounding; summarize/drop old screenshots; prefix-cache system+tools; measure prefill ms vs decode ms.']
+];
+const flash=$('flash');
+CARDS.forEach(([q,a])=>{
+  const d=document.createElement('div'); d.className='flip';
+  d.innerHTML=`<div class="flip-inner"><div class="flip-f"><span class="pill">Q</span> ${q}</div><div class="flip-b"><span class="pill">A</span> ${a}</div></div>`;
+  d.onclick=()=>d.classList.toggle('on');
+  flash.appendChild(d);
+});
+
+// ---- end quiz ----
+const Q=[
+["You append one 2k-token screenshot to an 8k cached prefix and decode 50 tokens. Which usually dominates wall-clock on a bandwidth-bound stack?",
+["Recomputing K,V for all 10k tokens on every decode step","Incremental prefill of the 2k against the 8k cache (plus KV write); 50 decode steps are comparatively cheap","Weight download from Hugging Face","Softmax normalization alone"],
+1,"With prefix cache you do not rebuild 8k. Short tool-call decode rarely outruns a multi-thousand-token visual append."],
+["Why does MQA cut KV memory much more than prefill FLOPs?",
+["Because MQA removes the FFN","KV scales with H_kv (→1 in MQA); prefill FLOPs are dominated by dense d_model matmuls that barely change","MQA replaces attention with average pooling","MQA only runs during training"],
+1,"Memory/bandwidth ∝ H_kv; compute for large N is mostly projections + FFN."],
+["Agent re-encodes the full trajectory every step, no prefix cache. Screenshots add ~S tokens each; horizon H. Prefill attention scales like…",
+["O(H)","O(S²)","Σ_t O((t S)²) ≈ O(S² H³)","O(log H)"],
+2,"n_t ~ t S; sum of squares over t=1..H gives the cubic-in-H blowup."],
+["Double n and switch MHA→GQA with H_kv = H/8. Cache size vs original short MHA context?",
+["16×","Same","¼× (2× from n, ÷8 from H_kv)","½×"],
+2,"Linear in n and H_kv: 2 × 1/8 = 1/4."],
+["During decode with a cache, attention is O(n d) per new token because…",
+["Softmax is skipped","Only one new query is scored against n cached keys (then V); you do not form a full n×n matrix","FlashAttention proves attention is always linear","Layers are fused into one"],
+1,"One q×K^T gives n scores; weighted sum over n value rows."],
+["PagedAttention's main serving win is…",
+["Approximating attention with a kernel smoother","Block-paged KV (virtual-memory style) cutting fragmentation and enabling prefix sharing across requests","Turning GQA into MHA","Running decode on CPU"],
+1,"Near-zero waste + shared prefix blocks — ideal when many agent sessions share a system prompt."],
+["OOMing on a 40-step high-res trajectory but still need grounding. Best policy?",
+["Drop the latest image; keep all historical raw screenshots","Keep latest screenshot high-fidelity; summarize/drop older images; reuse prefix cache for system+tools","Disable the KV cache","Replace all images with 1-token captions forever"],
+1,"Grounding needs current pixels; history is a systems compression problem; static prefixes should be cached."],
+["Latent world-action models cut K× renders. They leave which bill untouched unless the harness helps?",
+["All FLOPs vanish","Growing multimodal context prefill/KV for the base observe→act loop","Embedding table lookups only","Disk I/O for checkpoints"],
+1,"Foresight savings ≠ free long multimodal history. Still need cache + screenshot policy."]
+];
+Q.forEach(q=>{const c=q[1][q[2]]; const o=q[1].slice(); shuffle(o); q[1]=o; q[2]=o.indexOf(c);});
+shuffle(Q);
+let scr=0,ans=0; const qz=$('quiz');
+Q.forEach((q,i)=>{
+  const d=document.createElement('div'); d.className='q card';
+  d.innerHTML=`<b>Q${i+1}. ${q[0]}</b>`;
+  const ex=document.createElement('div'); ex.className='exp';
+  q[1].forEach((o,j)=>{
+    const b=document.createElement('button'); b.textContent=o;
+    b.onclick=()=>{
+      if(d.dataset.done)return; d.dataset.done=1; ans++;
+      if(j===q[2]){b.className='ok'; scr++;}
+      else{b.className='bad'; d.querySelectorAll('button')[q[2]].className='ok';}
+      ex.textContent=(j===q[2]?'✓ Correct. ':'✗ Not quite. ')+q[3];
+      $('score').textContent=`Score: ${scr}/${ans} answered (of ${Q.length})`;
+    };
+    d.appendChild(b);
+  });
+  d.appendChild(ex); qz.appendChild(d);
+});
+</script></body></html>

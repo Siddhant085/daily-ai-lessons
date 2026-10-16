@@ -1,6 +1,107 @@
 {
   "lessons": [
     {
+      "date": "2026-10-16",
+      "slug": "kv-cache-prefill-decode",
+      "title": "KV caching & prefill/decode for multimodal computer-use agents",
+      "tags": [
+        "fundamentals"
+      ],
+      "summary": "Why agent loops are dominated by prefill vs decode: attention FLOPs O(n²) vs O(n), KV cache memory growth, multimodal screenshot token blowup, and harness choices (truncate, summarize, cache reuse, prefix sharing).",
+      "minutes": 15,
+      "path": "lessons/2026-10-16-kv-cache-prefill-decode.html",
+      "cards": [
+        {
+          "q": "You append one 2k-token screenshot to an 8k-token prefix that is already cached, then decode 50 tokens. Which term usually dominates wall-clock on a memory-bandwidth-bound decode stack, and why?",
+          "choices": [
+            "Prefill of the new 2k tokens: attention work is O((10k)²) so the append alone dwarfs 50 decode steps",
+            "Prefill of only the new 2k tokens against the cached 8k (plus writing their KV), then 50 cheap O(n) decode steps — the incremental prefill is the spike; decode is rarely the larger bill here",
+            "The 50 decode steps: each must recompute Q,K,V for the whole 10k context",
+            "Neither: weight loading is identical for prefill and decode so they cost the same"
+          ],
+          "a": "Prefill of only the new 2k tokens against the cached 8k (plus writing their KV), then 50 cheap O(n) decode steps — the incremental prefill is the spike; decode is rarely the larger bill here",
+          "explanation": "With a working prefix cache you do not re-prefill 8k. Incremental prefill still pays attention for the new tokens against the full prefix (and builds their KV). Each decode step is O(n·d) against the cache. For short tool replies (≈50 tokens) the append prefill usually dominates; long generated plans flip that."
+        },
+        {
+          "q": "Why does switching from MHA to MQA shrink KV-cache memory far more than it shrinks prefill FLOPs?",
+          "choices": [
+            "MQA deletes the feed-forward layers during prefill",
+            "KV memory scales with H_kv, so one shared K/V head cuts cache size by ~H; prefill FLOPs are dominated by dense matmuls over d_model, which barely change",
+            "MQA makes attention O(n) instead of O(n²) during prefill",
+            "MQA quantizes K and V to int8 automatically"
+          ],
+          "a": "KV memory scales with H_kv, so one shared K/V head cuts cache size by ~H; prefill FLOPs are dominated by dense matmuls over d_model, which barely change",
+          "explanation": "Cache bytes ≈ 2·L·H_kv·d_head·n·bytes. MQA sets H_kv=1. Prefill is still ~2N FLOPs per token for an N-parameter model; attention is a smaller share for large models. Decode bandwidth to load the cache is where MQA/GQA win hardest."
+        },
+        {
+          "q": "An agent re-sends the full multimodal trajectory every step with no prefix cache. Horizon is H observe→act cycles and each new screenshot adds ~S tokens. How does total prefill attention cost scale with H (rough order)?",
+          "choices": [
+            "O(H) — each step only processes the newest screenshot",
+            "O(H² · S²) — step t re-prefills a context of length ~t·S, so Σ_t (tS)² ~ H³ S² wait — actually Σ_t (tS)² = S² Σ t² ~ S² H³",
+            "Σ_{t=1..H} O((t·S)²) ≈ O(S² H³) — naive full re-encode pays quadratic attention on a linearly growing context, every step",
+            "O(S²) independent of H because the model batches all screenshots"
+          ],
+          "a": "Σ_{t=1..H} O((t·S)²) ≈ O(S² H³) — naive full re-encode pays quadratic attention on a linearly growing context, every step",
+          "explanation": "Context length n_t ≈ t·S. Prefill attention ~ n_t² per step. Summing t=1..H gives ~S²·H³/3. Prefix caching collapses that toward paying each new segment once (plus decode)."
+        },
+        {
+          "q": "KV cache for one sequence is ≈ 2·L·H_kv·d_head·n·bytes_per_elem. You double context length n and switch from MHA (H_kv=H) to GQA with H_kv=H/8. Net cache size vs the original MHA short context?",
+          "choices": [
+            "16× larger",
+            "Same size (2× from n, ÷8 from H_kv → ¼)",
+            "¼ of the original (2× from n, ÷8 from H_kv)",
+            "½ of the original"
+          ],
+          "a": "¼ of the original (2× from n, ÷8 from H_kv)",
+          "explanation": "Linear in both n and H_kv. Doubling n multiplies by 2; cutting H_kv by 8 multiplies by 1/8; product is 1/4."
+        },
+        {
+          "q": "A computer-use harness must keep grounding fidelity on the latest screen but is OOMing on KV for a 40-step OSWorld-style trajectory of high-res screenshots. Which policy best matches the systems+ML trade-off in this lesson?",
+          "choices": [
+            "Drop the latest screenshot and keep all historical raw images — history matters more than the current pixels",
+            "Keep the latest screenshot at full fidelity, summarize or drop older screenshots (or their KV), and reuse prefix cache for the stable system prompt + tool schema",
+            "Disable the KV cache so memory stays flat",
+            "Replace every screenshot with a 1-token caption and never send pixels again"
+          ],
+          "a": "Keep the latest screenshot at full fidelity, summarize or drop older screenshots (or their KV), and reuse prefix cache for the stable system prompt + tool schema",
+          "explanation": "Grounding needs current pixels (Oct 11). History management is a systems problem: older frames are usually better as text summaries/ledger than as thousands of image tokens each. Prefix cache amortizes the static prompt."
+        },
+        {
+          "q": "During decode, why is attention against a cached K,V only O(n·d) per new token rather than O(n²·d)?",
+          "choices": [
+            "Softmax is skipped in decode",
+            "Only one new query row is multiplied by the n cached keys (and then by V); you do not rebuild the full n×n score matrix",
+            "FlashAttention changes the asymptotic complexity from quadratic to linear",
+            "Decode uses a CNN instead of attention"
+          ],
+          "a": "Only one new query row is multiplied by the n cached keys (and then by V); you do not rebuild the full n×n score matrix",
+          "explanation": "Prefill builds Q,K,V for all n tokens and scores an n×n (masked) matrix ~O(n²d). Decode appends one token: one q against n keys → n scores → weighted sum of n value vectors → O(nd) per layer (plus the FFN)."
+        },
+        {
+          "q": "PagedAttention (vLLM) primarily helps serving by…",
+          "choices": [
+            "Approximating attention with a linear kernel so FLOPs drop from O(n²) to O(n)",
+            "Storing each sequence's KV in non-contiguous fixed-size blocks (like OS virtual memory), cutting fragmentation and enabling sharing of common prefixes across requests",
+            "Replacing GQA with MHA for higher quality",
+            "Running prefill and decode on the CPU"
+          ],
+          "a": "Storing each sequence's KV in non-contiguous fixed-size blocks (like OS virtual memory), cutting fragmentation and enabling sharing of common prefixes across requests",
+          "explanation": "KV grows/shrinks dynamically; contiguous reservation wastes memory. Paging gives near-zero waste and prefix sharing — critical when many agent sessions share a system prompt."
+        },
+        {
+          "q": "Latent world-action models (Oct 15) cut per-step generative renders. How does that interact with today's prefill/decode picture?",
+          "choices": [
+            "It removes the need for a KV cache entirely",
+            "It reduces decode and image-token prefill from K speculative futures, but the agent still pays growing multimodal context costs unless the harness caches prefixes and manages screenshot history",
+            "It makes prefill O(n) and decode O(n²)",
+            "It only helps training loss, never inference latency"
+          ],
+          "a": "It reduces decode and image-token prefill from K speculative futures, but the agent still pays growing multimodal context costs unless the harness caches prefixes and manages screenshot history",
+          "explanation": "Yesterday attacked K× render + K× re-perceive. Today's bottleneck is the base observe→act context: screenshots + tool traces still grow n. You need both algorithmic foresight and systems-level cache/history policy."
+        }
+      ]
+    },
+    {
       "date": "2026-10-15",
       "slug": "latent-world-action-gui",
       "title": "Latent world action models for GUI agents",
