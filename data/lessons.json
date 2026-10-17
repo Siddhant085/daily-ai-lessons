@@ -1,6 +1,96 @@
 {
   "lessons": [
     {
+      "date": "2026-10-17",
+      "slug": "step-balanced-gspo-hybrid-cua",
+      "title": "Step-balanced GSPO: who gets the gradient when a GUI agent can also write code",
+      "tags": [
+        "latest"
+      ],
+      "summary": "OS-Helix (arXiv:2610.22234): in multi-action RL samples, GSPO's ratio is a token-count-weighted vote, so long code actions dominate the update and the clip; Step-balanced GSPO weights per action step. Plus the advantage-side knob from adaptive-group process rewards (arXiv:2610.17710).",
+      "minutes": 15,
+      "path": "lessons/2026-10-17-step-balanced-gspo-hybrid-cua.html",
+      "cards": [
+        {
+          "q": "GSPO length-normalizes its sequence ratio (exponent 1/|y|). In a training sample that contains several agent actions, why can one long code step still dominate the update?",
+          "choices": [
+            "GSPO multiplies each step's advantage by its token count",
+            "Normalizing by the sample's total tokens N makes every token's coefficient A·w/N, so grouped by step the log-ratio and the aggregate gradient are split |a_k|/N. Normalization fixes scale across samples, not balance between steps",
+            "Code tokens always have higher entropy and therefore larger gradients",
+            "GSPO clips GUI tokens individually but code tokens as a block"
+          ],
+          "a": "Normalizing by the sample's total tokens N makes every token's coefficient A·w/N, so grouped by step the log-ratio and the aggregate gradient are split |a_k|/N. Normalization fixes scale across samples, not balance between steps",
+          "explanation": "log w_GSPO = Σ_k (|a_k|/N)·δ̄_k. With 4×30-token clicks and one 400-token script, the script holds ~77% of both the vote and the update mass."
+        },
+        {
+          "q": "Under Step-balanced GSPO (unclipped branch), what is the total scalar gradient coefficient summed over the tokens of action step k, and how does it depend on the step's length?",
+          "choices": [
+            "A·w·|a_k|/N, so it grows linearly with length",
+            "A·w·ω_k with ω_k = α_type/Σα. It does not depend on |a_k|; each token gets ω_k/|a_k| of it",
+            "A·w, regardless of how many steps the sample has",
+            "Zero, because step-balanced GSPO stops gradients through the ratio"
+          ],
+          "a": "A·w·ω_k with ω_k = α_type/Σα. It does not depend on |a_k|; each token gets ω_k/|a_k| of it",
+          "explanation": "∂log w_step/∂log π(y_t) = ω_k/|a_k| for t in step k. Summing over the step's |a_k| tokens cancels the length, so steps are reinforced as steps."
+        },
+        {
+          "q": "One sample, A>0: four short GUI steps (no drift) and one long code step whose tokens drifted enough that GSPO's sample ratio exceeds 1+ε_high. What happens to the GUI steps' learning from this sample, and why?",
+          "choices": [
+            "They still get full gradient because GSPO clips per step",
+            "They get zero gradient: GSPO clips per sample, so the clipped branch is constant in θ for every token. Clean steps lose signal because of another step's drift",
+            "They get extra gradient to compensate for the clipped code step",
+            "Only the GUI reasoning tokens are clipped"
+          ],
+          "a": "They get zero gradient: GSPO clips per sample, so the clipped branch is constant in θ for every token. Clean steps lose signal because of another step's drift",
+          "explanation": "The shared clip decision depends mostly on the long step. Step-balanced weighting reduces the long step's share of log w to 1/K. Per-step clipping is a further design option."
+        },
+        {
+          "q": "Predict: thinking mode is on, all actions are GUI, and hard steps carry ~800 reasoning tokens while easy clicks carry ~20. With standard GSPO, what happens?",
+          "choices": [
+            "No imbalance, because there is only one modality",
+            "Reasoning-heavy steps dominate the log-ratio, the clip decision, and the aggregate gradient, so the same token-count bias appears without any code. Step-level balancing would equalize them",
+            "Easy clicks dominate because there are more of them",
+            "GSPO reduces to GRPO when reasoning is long"
+          ],
+          "a": "Reasoning-heavy steps dominate the log-ratio, the clip decision, and the aggregate gradient, so the same token-count bias appears without any code. Step-level balancing would equalize them",
+          "explanation": "|a_k| counts all loss-bearing tokens: reasoning, wrapper, and payload. The issue is variable step length, not modality as such."
+        },
+        {
+          "q": "You set α_code = 0.5 and α_GUI = 1 in Step-balanced GSPO. What does that do to code actions?",
+          "choices": [
+            "Adds a fixed penalty to the reward whenever code is used",
+            "Damps code steps symmetrically: less reinforcement when A>0, less suppression when A<0, and less influence on the clip decision. It is not a bias against choosing code",
+            "Halves the probability of sampling code at inference",
+            "Forces scripts to be shorter"
+          ],
+          "a": "Damps code steps symmetrically: less reinforcement when A>0, less suppression when A<0, and less influence on the clip decision. It is not a bias against choosing code",
+          "explanation": "ω_k scales the step's share of log w and its gradient whatever the sign of A. Routing preferences come from reward/advantage terms and SFT priors."
+        },
+        {
+          "q": "Which statement about what Step-balanced GSPO guarantees is correct?",
+          "choices": [
+            "It equalizes parameter-gradient norms and variances across GUI and code steps",
+            "It removes the deterministic length multiplier from each step's aggregate scalar coefficient. Token gradient directions and norms, clipping, and reward correlations can still bias routing",
+            "It guarantees the code-action fraction stays at the SFT level",
+            "It makes process rewards unnecessary"
+          ],
+          "a": "It removes the deterministic length multiplier from each step's aggregate scalar coefficient. Token gradient directions and norms, clipping, and reward correlations can still bias routing",
+          "explanation": "The OS-Helix authors say this explicitly. The fix is narrow and principled: it changes the aggregation weights only."
+        },
+        {
+          "q": "Adaptive-group process rewards combine levels as r_pr = r_act × r_group and add a standardized process advantage to GRPO's outcome advantage. Which knob of the PPO-style objective does this change, compared with Step-balanced GSPO?",
+          "choices": [
+            "Both change the importance ratio",
+            "Process rewards change the advantage (which steps deserve credit). Step-balancing changes the ratio aggregation (how the update budget and trust region are split). They are complementary",
+            "Both change the clip range",
+            "Process rewards change the KL term; step-balancing changes the reward"
+          ],
+          "a": "Process rewards change the advantage (which steps deserve credit). Step-balancing changes the ratio aggregation (how the update budget and trust region are split). They are complementary",
+          "explanation": "The product is an AND gate: a well-executed action in a harmful subgoal gets 0. A natural combination uses step-level advantages with a step-balanced ratio, e.g. via a GSPO-token-style per-step advantage."
+        }
+      ]
+    },
+    {
       "date": "2026-10-16",
       "slug": "kv-cache-prefill-decode",
       "title": "KV caching & prefill/decode for multimodal computer-use agents",

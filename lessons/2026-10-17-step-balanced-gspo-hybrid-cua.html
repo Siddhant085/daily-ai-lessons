@@ -1,0 +1,473 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Step-balanced GSPO: who gets the gradient when a GUI agent can also write code</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<style>
+:root{--bg:#fafbfc;--fg:#1d2433;--muted:#667;--card:#fff;--line:#e3e7ee;--soft:#f3f5f9;--soft2:#f7f8fb;--code:#eef1f6;
+--blue:#4f7cff;--red:#d64545;--amber:#e0a100;--violet:#8a5cf6;--green:#3aa55b;
+--note:#f2f6ff;--warn:#fff9e8;--mine:#f6f2ff;--bad:#fdf2f2;--ok:#e3f7e8;--badbtn:#fde8e8;--gui:#4f7cff;--codec:#e07a2e}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1420;--fg:#e4e8f0;--muted:#9aa3b5;--card:#171d2b;--line:#2a3347;--soft:#1c2333;--soft2:#1a2030;--code:#232b3d;
+--note:#172340;--warn:#2d2614;--mine:#231b38;--bad:#341a1d;--ok:#163322;--badbtn:#3a1c1f;--gui:#6f95ff;--codec:#f0954c}}
+body{font-family:Inter,system-ui,sans-serif;max-width:900px;margin:0 auto;padding:24px;color:var(--fg);line-height:1.6;background:var(--bg)}
+a{color:var(--blue)}
+h1{font-size:2rem;margin-bottom:4px;line-height:1.25}h2{border-bottom:2px solid var(--line);padding-bottom:4px;margin-top:40px}h3{margin-bottom:4px}
+code,.mono{font-family:'JetBrains Mono',monospace;font-size:.9em;background:var(--code);padding:1px 4px;border-radius:4px}
+pre{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;font-size:.82em;line-height:1.5}
+pre code{background:none;padding:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 20px;margin:16px 0}
+.note{border-left:4px solid var(--blue);background:var(--note)}.warn{border-left:4px solid var(--amber);background:var(--warn)}.mine{border-left:4px solid var(--violet);background:var(--mine)}.badbox{border-left:4px solid var(--red);background:var(--bad)}
+table{border-collapse:collapse;width:100%;font-size:.9em}td,th{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}th{background:var(--soft)}
+.tablewrap{overflow-x:auto}
+.ctl{display:flex;gap:14px 20px;flex-wrap:wrap;margin:10px 0;align-items:center}
+.ctl label{font-size:.9em}input[type=range]{vertical-align:middle;width:150px}
+.q{margin:14px 0}.q button{display:block;margin:5px 0;text-align:left;width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);cursor:pointer;font:inherit}
+.q button:hover{border-color:var(--blue)}
+.q button.ok{background:var(--ok);border-color:var(--green)}.q button.bad{background:var(--badbtn);border-color:var(--red)}.exp{font-size:.92em;color:var(--fg);opacity:.9;margin-top:6px}
+details{background:var(--soft2);border:1px dashed var(--line);border-radius:8px;padding:8px 12px;margin:10px 0}summary{cursor:pointer;font-weight:600}
+.btn{padding:7px 12px;border-radius:8px;border:1px solid var(--blue);background:var(--blue);color:#fff;font:inherit;font-size:.88em;cursor:pointer}.btn.sec{background:transparent;color:var(--blue)}
+.pill{display:inline-block;font-size:.78em;padding:1px 8px;border-radius:999px;background:var(--code);margin-right:4px}
+.eq{background:var(--soft);padding:10px 14px;border-radius:8px;overflow-x:auto;margin:10px 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.grid2>div{background:var(--soft2);border-radius:8px;padding:10px;font-size:.92em}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.grid3>div{background:var(--soft2);border-radius:8px;padding:10px;font-size:.88em}
+@media(max-width:700px){.grid2,.grid3{grid-template-columns:1fr}body{padding:14px}}
+.obj li{margin:4px 0}
+.flip{perspective:900px;cursor:pointer;margin:10px 0}
+.flip-inner{position:relative;width:100%;min-height:110px;transition:transform .45s;transform-style:preserve-3d}
+.flip.on .flip-inner{transform:rotateY(180deg)}
+.flip-f,.flip-b{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--card);overflow:auto}
+.flip-b{transform:rotateY(180deg);background:var(--note);border-color:var(--blue)}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.85em;margin:6px 0}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:middle}
+svg text{fill:var(--fg)}
+.status{font-weight:600;padding:1px 8px;border-radius:6px}
+.st-in{background:var(--ok)}.st-clip{background:var(--badbtn)}
+.small{font-size:.88em;color:var(--muted)}
+</style></head><body><nav id="dal-nav" style="position:sticky;top:0;z-index:9999;display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;background:#111827;font:600 15px/1.2 system-ui,sans-serif"><a href="../" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">← Home</a><a href="../archive.html" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">Archive</a><a href="../review.html" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">Review</a></nav>
+<h1>Step-balanced GSPO: who gets the gradient when a GUI agent can also write code</h1>
+<p style="color:var(--muted)">Track: <b>latest</b> · Lesson for Siddhant · Oct 17, 2026 · ~15 min · Main paper: OS-Helix (<a href="https://arxiv.org/abs/2610.22234">arXiv:2610.22234</a>, submitted Oct 15, 2026)</p>
+
+<div class="card note">
+<b>Learning objectives.</b> By the end you should be able to:
+<ul class="obj">
+<li>Write the importance ratio at the token (PPO/GRPO), sequence (GSPO), and <b>action-step</b> (Step-balanced GSPO) level, and say what each one is a ratio <i>of</i>.</li>
+<li>Show that in a multi-action training sample, the GSPO log-ratio is a <b>token-count-weighted</b> average of per-step log-ratios, and derive what that does to (a) how gradient is split across steps and (b) the clipping decision.</li>
+<li>Derive why Step-balanced GSPO makes each step's total gradient coefficient independent of its token length, and list what it does <i>not</i> fix.</li>
+<li>Tell apart the two knobs in a PPO-style agent objective, the <b>ratio aggregation unit</b> and the <b>advantage unit</b>, and combine them for a hybrid GUI+code computer-use agent.</li>
+</ul>
+</div>
+
+<div class="card note"><b>Warm-up: questions from earlier lessons.</b> Answer each in your head before reading on.
+<ol>
+<li><b>Oct 14 (credit assignment):</b> GRPO gives every token in a trajectory the same advantage \(\hat A_i\). What problem does that cause, and which part of the surrogate objective were process rewards changing?</li>
+<li><b>Oct 11 (grounding):</b> how many output tokens does a click action like <code>click(812, 344)</code> take, compared with a 40-line Python script that edits a spreadsheet?</li>
+<li><b>Oct 16 (KV cache):</b> an RL rollout keeps a sliding window of screenshots. Which tokens should be in the loss, and which should only be context?</li>
+<li><b>Oct 13 (OSWorld 2.0):</b> name one reason long-horizon desktop tasks favor programmatic actions over pure GUI clicking.</li>
+</ol>
+<details><summary>Check yourself</summary>(1) A uniform advantage can't tell useful steps from redundant ones, and process rewards changed the <i>advantage</i> term. Today is about the other factor, the <i>importance ratio</i>, and how it gets aggregated. (2) A click is a few dozen tokens including the tool wrapper. A script can be hundreds of tokens. That length gap is the whole story today. (3) Only the assistant responses generated inside the retained window go in the loss. Older tokens are conditioning with loss mask 0. OS-Helix does exactly this during RL. (4) Code turns many brittle GUI steps into one precise operation (bulk edits, file transforms), which shortens the horizon and avoids grounding small widgets.</details></div>
+
+<div class="card warn"><b>Hook.</b> You give your GUI agent a Python/Bash tool and run online RL with a sequence-level objective. As training goes on, the agent writes scripts for more and more of its steps, and the success rate ends up <b>below</b> the SFT checkpoint you started from. Nothing in the reward prefers code. So where did the push toward code come from? OS-Helix reports exactly this with standard GSPO. The cause is not the reward. It is how the loss <b>counts tokens</b> when one training sample contains several actions of very different lengths.</div>
+
+<h2>1. Setup: one policy, two kinds of actions</h2>
+<p>OS-Helix (Yang, Jin, Ding, et al., 2026) trains one multimodal policy over a unified action space:</p>
+<div class="eq">$$a_i \sim \pi_\theta(\cdot \mid q, h_i, o_i),\qquad a_i \in \mathcal{A}_{\text{hybrid}} = \underbrace{\mathcal{A}_{\text{GUI}} \cup \mathcal{A}_{\text{meta}}}_{\mathcal{A}_{\text{native}}} \cup \mathcal{A}_{\text{code}}$$</div>
+<p>GUI actions are clicks and keystrokes. Meta-actions end the episode, for example. Code actions run Python or Bash in a fresh process, and their stdout/stderr is appended to the context. The pipeline is SFT cold start on filtered teacher trajectories, then online RL in live Ubuntu VMs, where a rule-based evaluator score is the only reward.</p>
+<div class="grid2">
+<div><b>Why bother with hybrid?</b> GUI gives access to anything rendered on screen. Code gives precise, bulk manipulation of files and system state. The paper's preliminary finding: just <i>exposing</i> a code tool to a GUI-trained model made it slightly <i>worse</i>. Routing between the two has to be learned.</div>
+<div><b>The asymmetry that matters today.</b> In the serialized assistant output, a GUI step is short (reasoning, wrapper, coordinates). A code step is long (reasoning, wrapper, a script). One RL <i>training sample</i> (a segment of the trajectory) contains <b>several</b> action steps, some short and some long, that all share one outcome advantage.</div>
+</div>
+
+<h2>2. Ratio granularity: token → sequence → step</h2>
+<p>Every PPO-family objective multiplies an <b>advantage</b> by an <b>importance ratio</b> \(\pi_\theta/\pi_{\text{old}}\) and clips the ratio to keep the update near the policy that collected the data. The ratio is needed because rollouts come from a slightly stale policy: mini-batching makes the data off-policy, and OS-Helix's asynchronous pipeline lets rollouts lag the learner by up to one version. The design question is <b>what unit you compute the ratio over</b>.</p>
+
+<h3>Token-level (PPO / GRPO)</h3>
+<div class="eq">$$\mathcal{J}_{\text{GRPO}} = \mathbb{E}\Big[\tfrac{1}{G}\sum_{i=1}^{G}\tfrac{1}{|y_i|}\sum_{t=1}^{|y_i|}\min\big(w_{i,t}\hat A_{i},\ \mathrm{clip}(w_{i,t},1\!-\!\varepsilon,1\!+\!\varepsilon)\hat A_{i}\big)\Big],\quad w_{i,t}=\frac{\pi_\theta(y_{i,t}\mid x,y_{i,<t})}{\pi_{\text{old}}(y_{i,t}\mid x,y_{i,<t})}$$</div>
+<p>Each token has its own ratio and its own clip. Zheng et al. (GSPO, 2025) argue this is ill-posed: importance sampling corrects a distribution mismatch by averaging over many samples, but here each token's weight is based on a single draw from that token's next-token distribution. The result is noise that grows with response length and gets amplified by clipping. Their principle: <b>the unit of the optimization objective should match the unit of reward.</b></p>
+
+<h3>Sequence-level (GSPO)</h3>
+<div class="eq">$$s_i(\theta)=\left(\frac{\pi_\theta(y_i\mid x)}{\pi_{\text{old}}(y_i\mid x)}\right)^{1/|y_i|} = \exp\!\Big(\tfrac{1}{|y_i|}\textstyle\sum_t \log w_{i,t}\Big),\qquad \mathcal{J}_{\text{GSPO}}=\mathbb{E}\Big[\tfrac1G\sum_i \min\big(s_i\hat A_i,\ \mathrm{clip}(s_i,1\!-\!\varepsilon,1\!+\!\varepsilon)\hat A_i\big)\Big]$$</div>
+<p>This is a length-normalized geometric mean of the token ratios, with one ratio and one clip decision per response. Its gradient (unclipped) is</p>
+<div class="eq">$$\nabla_\theta \mathcal{J}_{\text{GSPO}} = \mathbb{E}\Big[\tfrac1G\sum_i s_i\,\hat A_i\cdot \tfrac{1}{|y_i|}\sum_t \nabla_\theta\log\pi_\theta(y_{i,t}\mid\cdot)\Big]$$</div>
+<p>so every token in sample \(i\) gets the same scalar coefficient \(s_i\hat A_i/|y_i|\). The length normalization keeps \(s_i\) in one numeric range across response lengths, so that a long response isn't up-weighted just for being long. That is the right fix when the unit is "one response to one prompt."</p>
+
+<div class="q card" id="cc1"><b>Concept check.</b></div>
+
+<h2>3. The hidden assumption: one sample ≠ one action</h2>
+<p>In agentic RL a training sample is a <b>segment of a trajectory</b> containing \(K_i\) action steps. Let \(a_{i,k}\) be the loss-bearing token positions of step \(k\) (reasoning, tool wrapper, and action content), \(\delta_{i,t}=\log w_{i,t}\), and \(N_i=\sum_k |a_{i,k}|\). Define the per-step mean log-ratio</p>
+<div class="eq">$$\bar\delta_{i,k}=\frac{1}{|a_{i,k}|}\sum_{t\in a_{i,k}}\delta_{i,t}.$$</div>
+<p>Regroup the GSPO log-ratio by step (Appendix E of the paper):</p>
+<div class="eq">$$\log w^{\text{GSPO}}_i=\frac{1}{N_i}\sum_t \delta_{i,t}=\sum_{k=1}^{K_i}\underbrace{\frac{|a_{i,k}|}{\sum_j |a_{i,j}|}}_{\omega^{\text{GSPO}}_{i,k}}\ \bar\delta_{i,k}.$$</div>
+<p>So the "sequence" ratio is a <b>token-count-weighted vote</b> over steps. Two consequences follow.</p>
+
+<div class="grid2">
+<div><b>(a) Gradient mass follows length.</b> In the unclipped branch every loss token gets coefficient \(A_i w_i / N_i\). Summed over step \(k\), its <i>aggregate</i> scalar coefficient is
+$$\sum_{t\in a_{i,k}}\frac{\partial L_i}{\partial \log\pi_\theta(y_{i,t})} = -A_i\,w_i\,\frac{|a_{i,k}|}{N_i}.$$
+A successful 400-token code step gets about 13× the total push of a 30-token click in the same sample. The routing token is not multiplied directly. What happens is that the long action contributes many more gradient terms under the same advantage, so it has more say in the update direction.</div>
+<div><b>(b) The trust region is measured on the long step.</b> The single clip decision depends on \(\sum_k\omega_k\bar\delta_k\). If the code step's tokens have drifted, the whole sample gets clipped, and the clean GUI steps lose their gradient too. If a <i>GUI</i> step has drifted a lot, its tiny weight \(\omega_k\) hides it and the sample stays "in region" (<i>my analysis</i>, which follows directly from the decomposition). In effect, clipping guards the long modality and barely watches the short one.</div>
+</div>
+
+<div class="card mine"><b>Why this produces drift toward code (as the paper explains it).</b> As training goes on, standard GSPO drifted toward code-heavy behavior, and success ended up slightly below the SFT start. OS-Helix attributes this to the token-count asymmetry: code steps dominate both the sample-level ratio and the clipping decision, so the optimization signal is dominated by code steps. The authors present it as "a source of token-length-driven drift", not a proof. The behavioral diagnostic is the fraction of actions that are code, tracked per RL update.</div>
+
+<div class="q card" id="cc2"><b>Concept check.</b></div>
+
+<h2>4. The fix: Step-balanced GSPO</h2>
+<p>Keep the token-level weights, the clipping structure, and the sample-level advantage. Change only the aggregation weights. Give each action type a nonnegative coefficient \(\alpha_\tau\) and set</p>
+<div class="eq">$$Z_i=\sum_{k=1}^{K_i}\alpha_{\tau_{i,k}},\qquad \omega_{i,k}=\frac{\alpha_{\tau_{i,k}}}{Z_i},\qquad \boxed{\,w^{\text{step}}_i(\theta)=\exp\Big(\sum_{k=1}^{K_i}\omega_{i,k}\,\bar\delta_{i,k}\Big)\,}$$</div>
+<div class="eq">$$J^{\text{clip}}_i=\min\Big(A_i\,w^{\text{step}}_i,\ A_i\,\mathrm{clip}\big(w^{\text{step}}_i,1-\epsilon_{\text{low}},1+\epsilon_{\text{high}}\big)\Big)$$</div>
+<p>OS-Helix uses \(\alpha_{\text{GUI}}=\alpha_{\text{code}}=1\), so every step gets an equal vote whatever its length. Setting \(\alpha\propto|a_{i,k}|\) gives back plain GSPO, so this is a strict generalization.</p>
+
+<h3>Derivation: the step's total coefficient no longer depends on its length</h3>
+<p>For a token \(t\in a_{i,k}\), only \(\bar\delta_{i,k}\) depends on \(\log\pi_\theta(y_{i,t})\), and it does so with weight \(1/|a_{i,k}|\):</p>
+<div class="eq">$$\frac{\partial \log w^{\text{step}}_i}{\partial\log\pi_\theta(y_{i,t})}=\frac{\omega_{i,k}}{|a_{i,k}|}\;\Rightarrow\;\frac{\partial L_i}{\partial\log\pi_\theta(y_{i,t})}=-A_i\,w^{\text{step}}_i\,\frac{\omega_{i,k}}{|a_{i,k}|}\;\Rightarrow\;\sum_{t\in a_{i,k}}(\cdot)=-A_i\,w^{\text{step}}_i\,\omega_{i,k}.$$</div>
+<p>The per-step total is \(A_i w_i \omega_{i,k}\) and is independent of \(|a_{i,k}|\). In plain terms, a successful action is reinforced <b>as a step</b>, not in proportion to how many tokens it took to serialize. The per-token coefficient of a long step shrinks like \(1/|a_{i,k}|\), so its tokens share a fixed budget.</p>
+
+<div class="card badbox"><b>What it does <i>not</i> do (the paper says this explicitly).</b> It does not equalize full parameter-gradient norms or variances across action lengths. The actual update still depends on token-specific gradient directions \(\nabla_\theta\log\pi_\theta(y_t)\), on which samples get clipped, and on how rewards correlate with modality choice. It removes a <i>deterministic length multiplier</i> and nothing more. Routing quality still comes from the SFT prior and from the reward.</div>
+
+<h3>Pseudocode (PyTorch-style)</h3>
+<pre><code># per sample i: logp_new, logp_old: [T] over assistant tokens
+# loss_mask: [T] in {0,1}; step_id: [T] in {0..K-1} (-1 for non-loss tokens)
+# step_type: [K] in {GUI, CODE}; alpha = {GUI: 1.0, CODE: 1.0}; A_i: scalar advantage
+delta = (logp_new - logp_old) * loss_mask                 # token log-ratios
+step_sum = scatter_add(delta, step_id, K)                 # sum_t delta per step
+step_len = scatter_add(loss_mask, step_id, K)             # |a_k|
+delta_bar = step_sum / step_len.clamp_min(1)              # mean log-ratio per step
+a = tensor([alpha[t] for t in step_type])
+omega = a / a.sum()                                       # standard GSPO would use step_len / step_len.sum()
+log_w = (omega * delta_bar).sum()
+w = log_w.exp()
+J = torch.minimum(A_i * w, A_i * w.clamp(1 - eps_low, 1 + eps_high))
+# (optional dual-clip for A_i &lt; 0, applied exactly as in GSPO, using this w)
+loss_i = -J
+loss = mean_over_samples(loss_i)                          # batch: (1/B) sum_i loss_i</code></pre>
+<p class="small">Implementation notes: you need per-token step ids, which means the rollout serializer has to record action boundaries and types. Malformed tool calls are split off as separate samples with reward 0 in OS-Helix, so step ids never straddle an invalid response. KL was disabled in their runs. If you add a token-level KL, weight it per step too, or token-count dependence comes back through the regularizer.</p>
+
+<h2>5. Interactive: step weights, gradient mass, and the clip decision</h2>
+<div class="card">
+<p>Build one training sample made of GUI steps and code steps. The toy assumes every token in a step has the same log-ratio \(\bar\delta\) (each step's drift is set by the sliders). Everything shown is the exact formula from §2–§4 for that toy. Clip range: \([1-\epsilon_{\text{low}}, 1+\epsilon_{\text{high}}]\) with \(\epsilon_{\text{low}}=0.2,\ \epsilon_{\text{high}}=0.28\), the values in OS-Helix's RL config. The GSPO paper notes that sequence-level and token-level clip ranges typically differ by orders of magnitude, so the right absolute scale depends on the implementation. Read the clip line as illustrative.</p>
+<div class="ctl">
+<label># GUI steps <input type="range" id="nG" min="0" max="10" value="4"> <b id="nGv"></b></label>
+<label>tokens / GUI step <input type="range" id="lG" min="5" max="400" step="5" value="30"> <b id="lGv"></b></label>
+<label># code steps <input type="range" id="nC" min="0" max="4" value="1"> <b id="nCv"></b></label>
+<label>tokens / code step <input type="range" id="lC" min="20" max="1500" step="10" value="400"> <b id="lCv"></b></label>
+</div>
+<div class="ctl">
+<label>extra reasoning tokens on GUI step 1 <input type="range" id="xR" min="0" max="1500" step="10" value="0"> <b id="xRv"></b></label>
+<label>α<sub>code</sub> / α<sub>GUI</sub> <input type="range" id="aC" min="0" max="2" step="0.05" value="1"> <b id="aCv"></b></label>
+<label>GUI drift δ̄<sub>GUI</sub> (all GUI steps) <input type="range" id="dG" min="-0.8" max="0.8" step="0.01" value="0"> <b id="dGv"></b></label>
+<label>code drift δ̄<sub>code</sub> <input type="range" id="dC" min="-0.8" max="0.8" step="0.01" value="0"> <b id="dCv"></b></label>
+<label>Advantage sign <select id="As"><option value="1">A &gt; 0 (success)</option><option value="-1">A &lt; 0 (failure)</option></select></label>
+</div>
+<div class="ctl">
+<button class="btn sec" data-p="typ">Typical hybrid</button>
+<button class="btn sec" data-p="codedrift">Code tokens drifted</button>
+<button class="btn sec" data-p="guidrift">GUI steps drifted silently</button>
+<button class="btn sec" data-p="think">One GUI step thinks long</button>
+</div>
+<div class="legend"><i style="background:var(--gui)"></i>GUI step tokens &nbsp; <i style="background:var(--codec)"></i>code step tokens</div>
+<svg id="strip" viewBox="0 0 860 250" style="width:100%;background:var(--soft2);border:1px solid var(--line);border-radius:8px"></svg>
+<div class="tablewrap"><table id="tbl" style="margin-top:10px"></table></div>
+<p id="vz" style="font-size:.92em"></p>
+<p class="small">Try these. (1) <b>Typical hybrid</b>: under GSPO the single code step takes most of the vote; under step-balanced every step gets 1/K. (2) <b>Code tokens drifted</b> with A&gt;0: GSPO clips the whole sample, so the four untouched GUI steps lose their gradient too. Step-balanced stays in region. (3) <b>GUI steps drifted silently</b>: every click's per-token ratio is about e<sup>0.6</sup>≈1.8, yet GSPO reports the sample as in region. Step-balanced clips it. (4) <b>One GUI step thinks long</b>: with no code at all, one click with 800 reasoning tokens takes almost all of GSPO's vote. The imbalance is about tokens, not modality. (5) Set α<sub>code</sub>=0: code steps get no gradient at all and no say in clipping, so the behavior from SFT is frozen.</p>
+</div>
+
+<h2>6. Worked example</h2>
+<p>One sample: 4 GUI steps × 30 tokens and 1 code step × 400 tokens, so \(N=520\).</p>
+<div class="tablewrap"><table>
+<tr><th></th><th>GSPO weight \(\omega_k\)</th><th>Step-balanced \(\omega_k\)</th><th>per-token coeff. (÷\(A w\))</th></tr>
+<tr><td>each GUI step</td><td>30/520 ≈ 0.058</td><td>1/5 = 0.20</td><td>GSPO 1/520 · Step 0.2/30 ≈ 1/150</td></tr>
+<tr><td>code step</td><td>400/520 ≈ 0.769</td><td>1/5 = 0.20</td><td>GSPO 1/520 · Step 0.2/400 = 1/2000</td></tr>
+<tr><td>total share of the update, GUI vs code</td><td>23% vs 77%</td><td>80% vs 20%</td><td></td></tr>
+</table></div>
+<p><b>Clip check (A&gt;0, upper bound \(\log 1.28\approx0.247\)).</b> Suppose the code tokens have drifted to \(\bar\delta_{\text{code}}=0.35\) and the GUI steps are unchanged. GSPO: \(\log w = 0.769\times0.35\approx0.269>0.247\), so the sample is <b>clipped</b> and all five steps get zero gradient. Step-balanced: \(0.2\times0.35=0.07\), so it stays in region. Now reverse it: one GUI step drifts to \(\bar\delta=0.6\), a per-token ratio of about \(e^{0.6}\approx1.82\) on that click. GSPO: \(0.058\times0.6\approx0.035\), so the trust region effectively doesn't see it. Step-balanced: \(0.2\times0.6=0.12\), which is visible: about 3.5× the GSPO value, and it would trip the clip at a drift GSPO ignores.</p>
+
+<div class="q card" id="cc3"><b>Concept check.</b></div>
+
+<h2>7. What the ablation shows (qualitatively)</h2>
+<p>With the same SFT start, data, sampling, reward, and budget, standard GSPO <i>lowered</i> OSWorld-Verified success below the SFT checkpoint and pushed the code-action rate well above the SFT level (from 27.9% to 40.0% of actions). Step-balanced GSPO improved success over SFT and kept the code-action rate close to SFT (26.1%). Two more findings put this in context. SFT accounts for most of the overall gain, and RL from the raw backbone with no SFT barely helped. RL improved Pass@3 more than Pass@1, which the authors read as RL finding more <i>distinct</i> successful trajectories rather than sharpening a single one. Takeaway: the RL objective's aggregation unit decided whether RL helped or hurt on top of a good SFT prior.</p>
+
+<h2>8. The other knob: advantage granularity (adaptive-group process rewards)</h2>
+<p>Step-balancing changes the <b>ratio</b> side. It still uses one outcome advantage \(A_i\) per sample, so a redundant click and the decisive script are reinforced equally. A paper from two days earlier works on the <b>advantage</b> side for GUI RL: Adaptive-Group Process Rewards (Shang et al., <a href="https://arxiv.org/abs/2610.17710">arXiv:2610.17710</a>). This connects back to the Oct 14 lesson.</p>
+<ol>
+<li>A critic splits the executed trajectory into contiguous <b>subgoal groups</b> \(G_k\) using the instruction and the agent's own stated intents. The grouping comes from the trajectory itself, not from fixed windows or predefined milestones.</li>
+<li>An <b>action-level</b> critic labels each action with an execution result (Completed/Partial/Failed/Uncertain) and a contribution (Milestone … Harmful), using the screenshots and the <i>later</i> actions in the group. A <b>group-level</b> critic scores subgoal completion and contribution to the task, and a refinement pass re-scores each group with all groups in view.</li>
+<li>Combine the two levels with a product, which acts as an AND gate: \(r^{\text{pr}}_t=r^{\text{act}}_t\cdot\tilde r^{\text{group}}_{k(t)}\).</li>
+<li>Shape the GRPO advantage: \(A_{i,t}=\hat A^{\text{out}}_i+\alpha\,\hat A^{\text{pr}}_{i,t}\), where \(\hat A^{\text{pr}}\) is standardized over <i>all steps</i> of all trajectories in the group.</li>
+</ol>
+<p>In their ablations, swapping the product for a sum, or removing either level, hurt agreement with human step labels. The intuition: under a sum, a perfectly executed action inside a harmful subgoal still gets half credit.</p>
+<div class="card mine"><b>Synthesis (mine, not from either paper): composing the two knobs.</b> GSPO-token (Zheng et al.) already supports per-token advantages, with \(s_{i,t}=\mathrm{sg}[s_i]\cdot\pi_\theta(y_{i,t})/\mathrm{sg}[\pi_\theta(y_{i,t})]\). A natural hybrid-CUA objective uses the <i>step-balanced</i> ratio as the stop-gradient multiplier and a <i>per-step</i> advantage \(A_{i,k}\) (outcome + process), with each step's token terms scaled by \(\omega_{i,k}/|a_{i,k}|\). Then both "how much credit" and "how much update budget" are decided per action step, which is the unit the environment actually responds to. Open questions: whether to clip per step or per sample, and whether process-reward noise (misreading small UI details is a major error category in the AGPR error analysis) interacts badly with a high-variance step-level advantage.</div>
+
+<h2>9. Other RL-system details in OS-Helix worth stealing</h2>
+<div class="grid3">
+<div><b>Frontier task sampling.</b> EMA success \(\hat p_i\) per task, sampling weight \(\exp(-(\hat p_i-0.5)^2/2\sigma^2)\). Why it works: group-normalized advantages vanish when all G rollouts succeed or all fail, and Bernoulli variance \(p(1-p)\) is largest at \(p=0.5\).</div>
+<div><b>Sliding-window segmentation.</b> Keep 5–10 screenshots. On overflow, save the segment as a training sample and keep the newest 5. Only responses generated inside the window are in the loss, and the same windowing is used at inference so train and test match. This ties back to the Oct 16 KV/context-budget lesson, and it's why one "sample" holds several actions in the first place.</div>
+<div><b>Invalid-action isolation.</b> An unparsable tool call becomes its own sample with reward 0, even if the rest of the trajectory later succeeds. This stops later recovery from giving malformed actions accidental positive credit.</div>
+</div>
+
+<h2>10. How this applies to computer-use agents</h2>
+<div class="card note">
+<ul>
+<li><b>Audit any heterogeneous-length action space.</b> GUI vs code is the clean example. Long <code>type()</code> payloads, long tool JSON, and especially <b>variable-length reasoning</b> per step cause the same token-weighted vote. If thinking is on, hard steps with long chains of thought will dominate the ratio and the clip in a GSPO-style objective.</li>
+<li><b>Log by step type:</b> share of loss tokens, clip fraction, mean \(\bar\delta\), and the modality mix per update. A rising code fraction with no reward reason is the signature failure.</li>
+<li><b>Treat α as a prior with two sides.</b> Lowering \(\alpha_{\text{code}}\) dampens code steps in both directions: less reinforcement when they succeed, less suppression when they fail, and less influence on clipping. It is not a penalty on code.</li>
+<li><b>Match units across the stack.</b> Reward per trajectory (verifier), advantage per step (process rewards), ratio per step (step-balanced), and context per window (segmentation). Inconsistent units are where hidden biases come from.</li>
+<li><b>Grounding link (Oct 11).</b> Code actions bypass grounding on tiny widgets. That's the upside. The downside is that they bring new failure modes (side effects, prompt injection through files), which the paper flags as deployment risks. Your safety gating should be per action type too.</li>
+</ul>
+</div>
+
+<h2>11. Common misconceptions</h2>
+<div class="card badbox">
+<ul>
+<li><b>"GSPO's length normalization already removes length bias."</b> It removes bias <i>between samples</i> of different lengths. Inside a multi-action sample it still weights steps by token count.</li>
+<li><b>"The routing token gets multiplied by the script length."</b> No. Each token's coefficient is \(Aw/N\). The bias is in aggregate mass: the long step contributes many more terms.</li>
+<li><b>"Step-balancing equalizes gradient norms across modalities."</b> Explicitly not. It removes a deterministic length multiplier from the step's scalar coefficient. Directions and norms still differ.</li>
+<li><b>"Drift toward code means code is better."</b> Not necessarily. Here the drift came with <i>lower</i> success. Always separate reward-driven shifts from objective-driven shifts.</li>
+<li><b>"Process rewards and ratio aggregation are interchangeable fixes."</b> They act on different factors (advantage vs ratio) and fix different problems: which steps deserve credit vs how the update budget and trust region are split.</li>
+</ul>
+</div>
+
+<h2>12. Key takeaways (one-paragraph summary)</h2>
+<p>PPO-family objectives multiply an advantage by a clipped importance ratio, and the <b>aggregation unit</b> of that ratio is a design choice. GRPO uses tokens. GSPO uses whole responses, which fits when one response is one rewarded unit. In agentic RL a training sample holds several actions, and GSPO's log-ratio becomes a token-count-weighted average over steps. Long actions such as scripts then soak up most of the update and control the clip decision, and OS-Helix observed this as drift toward code that ended below the SFT baseline. Step-balanced GSPO replaces token-count weights with explicit per-step weights \(\alpha_\tau/Z\), which makes each step's total gradient coefficient independent of its length while keeping GSPO's clipping. It is not a guarantee of good routing. Pair it with step-level advantages (adaptive-group process rewards) so that both credit and update budget are assigned per action step.</p>
+
+<h2>13. Spaced-repetition flashcards</h2>
+<p class="small">Click a card to flip it.</p>
+<div id="flash"></div>
+
+<h2>14. End quiz</h2>
+<p class="small">Options are shuffled each time the page loads. Click once per question.</p>
+<div id="quiz"></div>
+<p id="score" style="font-weight:600"></p>
+
+<h2>15. Sources</h2>
+<ul>
+<li>Yang, Jin, Ding, et al. (2026). <a href="https://arxiv.org/abs/2610.22234">OS-Helix: Unifying GUI Interaction and Code Execution in Native Computer-Using Agents</a> (arXiv:2610.22234, Oct 15, 2026). Hybrid action space, Step-balanced GSPO (§3.3.2, Appendix E), RL sampling/segmentation (Appendix C), ablations (Table 4). <a href="https://arxiv.org/html/2610.22234">HTML</a>.</li>
+<li>Shang, Liu, Shu, Gao, Wu, Fan (2026). <a href="https://arxiv.org/abs/2610.17710">Adaptive-Group Process Rewards for GUI Agents</a> (arXiv:2610.17710, Oct 13, 2026). Subgoal grouping, two-level scoring, product aggregation, GRPO advantage shaping.</li>
+<li>Zheng, Liu, Li, et al. (2025). <a href="https://arxiv.org/abs/2507.18071">Group Sequence Policy Optimization</a> (arXiv:2507.18071). Sequence-level ratio, gradient analysis, GSPO-token.</li>
+<li>Shao et al. (2024). <a href="https://arxiv.org/abs/2402.03300">DeepSeekMath</a> (arXiv:2402.03300). Introduces GRPO.</li>
+<li>Schulman et al. (2017). <a href="https://arxiv.org/abs/1707.06347">Proximal Policy Optimization Algorithms</a> (arXiv:1707.06347).</li>
+<li>Related trend (abstract only): Lu et al. (2026). <a href="https://arxiv.org/abs/2610.04116">CUAWright: A Minimal Unified Interface for Digital Agents</a> (arXiv:2610.04116). A bash-only harness argument for programmatic computer use.</li>
+<li>Prior lessons: <a href="2026-10-16-kv-cache-prefill-decode.html">KV cache &amp; prefill/decode</a> · <a href="2026-10-15-latent-world-action-gui.html">Latent world-action GUI</a> · <a href="2026-10-14-credit-assignment-process-rewards.html">Credit assignment</a> · <a href="2026-10-13-osworld2-long-horizon.html">OSWorld 2.0</a> · <a href="2026-10-11-screen-grounding.html">Screen grounding</a></li>
+</ul>
+
+<script>
+const $=id=>document.getElementById(id);
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+function mountMC(el, question, choices, correctIdx, explain){
+  const wrap=document.createElement('div');
+  const qq=document.createElement('p'); qq.innerHTML='<b>'+question+'</b>'; wrap.appendChild(qq);
+  const exp=document.createElement('div'); exp.className='exp';
+  const opts=shuffle(choices.map((c,i)=>({c,i})));
+  const btns=[];
+  opts.forEach(({c,i})=>{
+    const b=document.createElement('button'); b.textContent=c; btns.push({b,i});
+    b.onclick=()=>{
+      if(wrap.dataset.done)return; wrap.dataset.done=1;
+      if(i===correctIdx){b.className='ok'; exp.textContent='✓ Correct. '+explain;}
+      else{b.className='bad'; btns.forEach(o=>{if(o.i===correctIdx)o.b.className='ok';}); exp.textContent='✗ Not quite. '+explain;}
+    };
+    wrap.appendChild(b);
+  });
+  wrap.appendChild(exp); el.appendChild(wrap);
+}
+
+mountMC($('cc1'),
+  'GSPO divides the sequence log-likelihood ratio by |y| before exponentiating. What problem is that normalization solving?',
+  ['It keeps ratios of short and long responses in one numeric range, so one clip interval works and a few token changes cannot swing a long response\'s ratio wildly',
+   'It turns the sequence ratio into an unbiased importance-sampling estimator of the token ratio',
+   'It makes long responses receive proportionally more gradient, matching their larger reward',
+   'It removes the need for the old policy in the ratio'],
+  0,
+  'Without the 1/|y| exponent, the sequence ratio is a product of |y| token ratios. It would explode or vanish with length, and every length would need its own clip range. The normalization is about numerical range and variance between samples. As §3 shows, it does nothing about balance between steps inside one sample.');
+
+mountMC($('cc2'),
+  'A multi-action sample with A>0 has 5 GUI steps (20 tokens each) and 1 code step (500 tokens). Under standard GSPO, which statement is true in the unclipped branch?',
+  ['Every token gets the same coefficient A·w/600, so the code step carries 500/600 of the step-aggregated push and the five clicks together get 1/6',
+   'Each step gets an equal 1/6 share because GSPO is sequence-level',
+   'The code step\'s routing token gets 500× the coefficient of a GUI routing token',
+   'The GUI tokens get larger coefficients because they are rarer'],
+  0,
+  'Per-token coefficients are uniform (A·w/N). Aggregated by step, the shares are |a_k|/N. The bias is in aggregate mass, not in any single token being multiplied. The paper makes exactly this distinction.');
+
+mountMC($('cc3'),
+  'Same sample as the worked example (4×30-token GUI steps, 1×400-token code step), A>0. Only one GUI step drifts: δ̄=+0.6. Under GSPO, what happens to the clip decision and why does it matter?',
+  ['log w ≈ 0.058·0.6 ≈ 0.035, so the sample stays in region. That click\'s per-token ratio is ~1.8, but the shared trust region barely sees it because the step\'s weight is tiny',
+   'The sample is clipped because any token ratio above 1.28 triggers clipping in GSPO',
+   'log w ≈ 0.6, so the sample is clipped',
+   'GSPO clips each step independently, so only that GUI step is clipped'],
+  0,
+  'GSPO clips at the sample level on the length-weighted mean. Short steps can drift a lot without moving the ratio, so the proximal constraint mostly protects long steps. Step-balanced weighting makes a short step\'s drift 1/K of the log-ratio instead of |a_k|/N.');
+
+// ---- interactive ----
+const EPS_LO=0.2, EPS_HI=0.28;
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim()||'#888';}
+function sim(){
+  const xR=+$('xR').value; $('xRv').textContent=xR; const nG=+$('nG').value,lG=+$('lG').value,nC=+$('nC').value,lC=+$('lC').value,aC=+$('aC').value,dG=+$('dG').value,dC=+$('dC').value,As=+$('As').value;
+  $('nGv').textContent=nG;$('lGv').textContent=lG;$('nCv').textContent=nC;$('lCv').textContent=lC;$('aCv').textContent=aC.toFixed(2);$('dGv').textContent=dG.toFixed(2);$('dCv').textContent=dC.toFixed(2);
+  // build steps: interleave code steps among GUI steps
+  const steps=[]; let gi=0,ci=0; const K=nG+nC;
+  for(let k=0;k<K;k++){
+    const wantCode = nC>0 && ci<nC && (Math.round((k+1)*nC/K) > ci);
+    if(wantCode){steps.push({type:'code',len:lC,d:dC,alpha:aC});ci++;} else if(gi<nG){steps.push({type:'GUI',len:lG,d:dG,alpha:1});gi++;} else {steps.push({type:'code',len:lC,d:dC,alpha:aC});ci++;}
+  }
+  const fg0=steps.find(s=>s.type==='GUI'); if(fg0&&xR>0){fg0.len+=xR; fg0.hard=true;}
+  const svg=$('strip');
+  if(K===0){svg.innerHTML='<text x="20" y="40">Add at least one step.</text>';$('tbl').innerHTML='';$('vz').textContent='';return;}
+  const N=steps.reduce((s,x)=>s+x.len,0);
+  const Z=steps.reduce((s,x)=>s+x.alpha,0);
+  steps.forEach(s=>{s.wG=s.len/N; s.wS=Z>0? s.alpha/Z:0;});
+  const logG=steps.reduce((s,x)=>s+x.wG*x.d,0), logS=steps.reduce((s,x)=>s+x.wS*x.d,0);
+  const wG=Math.exp(logG), wS=Math.exp(logS);
+  const clipped=(w)=> As>0 ? (w>1+EPS_HI) : (w<1-EPS_LO);
+  // GRPO token-level: every token in step has ratio exp(d); clipped per token
+  const grpoClipStep=s=>clipped(Math.exp(s.d));
+  const cG=css('--gui'), cC=css('--codec'), fg=css('--fg'), line=css('--line');
+  const W=860, x0=150, x1=840, span=x1-x0;
+  let g='';
+  g+=`<text x="10" y="22" font-size="12">Tokens (width ∝ count)</text>`;
+  let x=x0;
+  steps.forEach((s,k)=>{const w=span*s.len/N; g+=`<rect x="${x}" y="10" width="${Math.max(w-1,0.5)}" height="18" fill="${s.type==='code'?cC:cG}" rx="2"/>`; if(w>26) g+=`<text x="${x+w/2}" y="23" font-size="10" text-anchor="middle" fill="#fff">${s.type==='code'?'C':'G'}${k+1}${s.hard?'*':''}</text>`; x+=w;});
+  // rows: share of log-ratio vote (GSPO vs Step), aggregate gradient mass, per-token coefficient
+  const rows=[
+    {lab:'GSPO vote ω_k',key:'wG',y:52},
+    {lab:'Step-bal. vote ω_k',key:'wS',y:82},
+  ];
+  rows.forEach(r=>{
+    g+=`<text x="10" y="${r.y+13}" font-size="12">${r.lab}</text>`;
+    let xx=x0; steps.forEach(s=>{const w=span*s[r.key]; g+=`<rect x="${xx}" y="${r.y}" width="${Math.max(w-1,0)}" height="18" fill="${s.type==='code'?cC:cG}" opacity=".85" rx="2"/>`; xx+=w;});
+  });
+  // per-token coefficient (relative): GSPO 1/N ; Step ω_k/|a_k|
+  g+=`<text x="10" y="128" font-size="12">Per-token coeff. (log)</text>`;
+  const coefG=1/N; const coefs=steps.map(s=>s.wS/s.len);
+  const all=[coefG,...coefs.filter(c=>c>0)]; const mn=Math.min(...all), mx=Math.max(...all);
+  const ly=c=> c<=0? 0 : (mx===mn? 30 : 6+ 34*(Math.log(c)-Math.log(mn))/(Math.log(mx)-Math.log(mn)));
+  let xx=x0;
+  steps.forEach((s,k)=>{const w=span*s.len/N; const hS=ly(coefs[k]); const hG=ly(coefG);
+    g+=`<rect x="${xx}" y="${160-hG}" width="${Math.max(w/2-1,0.5)}" height="${hG}" fill="${fg}" opacity=".35"/>`;
+    g+=`<rect x="${xx+w/2}" y="${160-hS}" width="${Math.max(w/2-1,0.5)}" height="${hS}" fill="${s.type==='code'?cC:cG}"/>`; xx+=w;});
+  g+=`<text x="10" y="146" font-size="10" opacity=".7">grey GSPO · color step</text>`;
+  // clip gauges
+  const gy=190; const lo=Math.log(1-EPS_LO), hi=Math.log(1+EPS_HI); const R=0.8;
+  const gx=v=> x0 + span*(Math.max(-R,Math.min(R,v))+R)/(2*R);
+  g+=`<line x1="${x0}" y1="${gy+10}" x2="${x1}" y2="${gy+10}" stroke="${line}" stroke-width="2"/>`;
+  g+=`<rect x="${gx(lo)}" y="${gy}" width="${gx(hi)-gx(lo)}" height="20" fill="${css('--green')}" opacity=".18"/>`;
+  g+=`<text x="10" y="${gy+14}" font-size="12">log w vs clip band</text>`;
+  g+=`<text x="${gx(lo)}" y="${gy+34}" font-size="10" text-anchor="middle">log(1−ε_low)</text><text x="${gx(hi)}" y="${gy+34}" font-size="10" text-anchor="middle">log(1+ε_high)</text><text x="${gx(0)}" y="${gy+34}" font-size="10" text-anchor="middle">0</text>`;
+  g+=`<circle cx="${gx(logG)}" cy="${gy+10}" r="7" fill="${fg}" opacity=".55"/><text x="${gx(logG)}" y="${gy-4}" font-size="10" text-anchor="middle">GSPO</text>`;
+  g+=`<circle cx="${gx(logS)}" cy="${gy+10}" r="7" fill="${css('--violet')}"/><text x="${gx(logS)}" y="${gy+50}" font-size="10" text-anchor="middle" fill="${css('--violet')}">Step</text>`;
+  svg.innerHTML=g;
+  // table
+  const shareCodeG=steps.filter(s=>s.type==='code').reduce((a,s)=>a+s.wG,0), shareCodeS=steps.filter(s=>s.type==='code').reduce((a,s)=>a+s.wS,0);
+  const mxs=key=>{let bi=0;steps.forEach((s,k)=>{if(s[key]>steps[bi][key])bi=k;});const s=steps[bi];return `${(s[key]*100).toFixed(1)}% (${s.type==='code'?'C':'G'}${bi+1}${s.hard?'*':''})`;};
+  const st=(c)=> c?'<span class="status st-clip">clipped → 0 grad</span>':'<span class="status st-in">in region</span>';
+  const grpoClipFrac = steps.reduce((a,s)=>a+(grpoClipStep(s)?s.len:0),0)/N;
+  $('tbl').innerHTML=`<tr><th>Objective</th><th>code share of step vote</th><th>sample log-ratio</th><th>ratio w</th><th>largest single-step share</th><th>clip status (A ${As>0?'&gt;':'&lt;'} 0)</th></tr>
+  <tr><td>GRPO (token-level)</td><td>n/a (per-token ratios)</td><td>n/a</td><td>e^δ̄ per step</td><td>n/a</td><td>${(grpoClipFrac*100).toFixed(0)}% of tokens clipped individually</td></tr>
+  <tr><td>GSPO (sequence)</td><td>${(shareCodeG*100).toFixed(1)}%</td><td>${logG.toFixed(3)}</td><td>${wG.toFixed(3)}</td><td>${mxs('wG')}</td><td>${st(clipped(wG))}</td></tr>
+  <tr><td>Step-balanced GSPO</td><td>${(shareCodeS*100).toFixed(1)}%</td><td>${logS.toFixed(3)}</td><td>${wS.toFixed(3)}</td><td>${mxs('wS')}</td><td>${st(clipped(wS))}</td></tr>`;
+  const ratioTok = nC&&nG? (lC/lG):null;
+  $('vz').innerHTML=`N = ${N} loss tokens across K = ${K} steps. `+
+   (ratioTok? `A code step has ${ratioTok.toFixed(1)}× the tokens of a GUI step, so under GSPO it gets ${ratioTok.toFixed(1)}× the aggregate push. Under step-balanced weighting the aggregate per step is A·w·ω_k (GUI ${(1/Z).toFixed(3)}, code ${(aC/Z).toFixed(3)}). `:'')+
+   (clipped(wG)&&!clipped(wS)?' <b>GSPO zeroes this whole sample, including the clean steps. Step-balanced keeps learning from it.</b>':'')+
+   (!clipped(wG)&&clipped(wS)?' <b>Step-balanced clips here because a short step drifted enough to matter. GSPO would not notice.</b>':'');
+}
+['nG','lG','nC','lC','xR','aC','dG','dC','As'].forEach(id=>$(id).addEventListener('input',sim));
+const PRE={typ:{nG:4,lG:30,nC:1,lC:400,xR:0,aC:1,dG:0,dC:0,As:1},codedrift:{nG:4,lG:30,nC:1,lC:400,xR:0,aC:1,dG:0,dC:0.35,As:1},guidrift:{nG:4,lG:30,nC:1,lC:400,xR:0,aC:1,dG:0.6,dC:0,As:1},think:{nG:5,lG:20,nC:0,lC:400,xR:800,aC:1,dG:0,dC:0,As:1}};
+document.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{const p=PRE[b.dataset.p];Object.entries(p).forEach(([k,v])=>{$(k).value=v;}); sim();});
+sim();
+if(window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',sim);
+
+// ---- flashcards ----
+const CARDS=[
+ ['Decompose the GSPO log-ratio of a multi-action sample.','log w = Σ_k (|a_k|/N) · δ̄_k: a token-count-weighted average of the per-step mean log-ratios.'],
+ ['Step-balanced GSPO ratio','w_step = exp(Σ_k ω_k δ̄_k), with ω_k = α_type(k) / Σ_j α_type(j). Same clip and advantage as GSPO. α ∝ |a_k| recovers GSPO.'],
+ ['Per-step aggregate gradient coefficient: GSPO vs step-balanced','GSPO: A·w·|a_k|/N (grows with length). Step-balanced: A·w·ω_k (independent of length). Per-token coefficient = ω_k/|a_k| · A·w.'],
+ ['Why does GSPO\'s trust region under-protect short steps?','One clip decision on the length-weighted mean: a short step\'s large drift barely moves log w, while a long step\'s drift can clip the whole sample.'],
+ ['What step-balancing does not guarantee','Equal gradient norms/variances or correct routing. Token gradient directions, clipping, and reward correlations still matter.'],
+ ['Two knobs of a PPO-style agent objective','Advantage unit (which steps deserve credit: process rewards, e.g. adaptive groups) and ratio aggregation unit (how the update budget and trust region are split).'],
+ ['Why sample tasks near 50% success for group-relative RL?','All-pass or all-fail groups give zero standardized advantage. Bernoulli variance p(1−p) peaks at p=0.5, which maximizes useful signal per rollout.']
+];
+const flash=$('flash');
+CARDS.forEach(([q,a])=>{
+  const d=document.createElement('div'); d.className='flip';
+  d.innerHTML=`<div class="flip-inner"><div class="flip-f"><span class="pill">Q</span> ${q}</div><div class="flip-b"><span class="pill">A</span> ${a}</div></div>`;
+  d.onclick=()=>d.classList.toggle('on');
+  flash.appendChild(d);
+});
+
+// ---- end quiz ----
+const Q=[
+["Inside one training sample, why does standard GSPO let a single long code step dominate the update even though GSPO is length-normalized?",
+ ["Length normalization divides by the sample's total tokens N, so each step's share of the log-ratio and of the aggregate gradient is |a_k|/N. Normalization fixes cross-sample scale, not within-sample balance between steps",
+  "GSPO multiplies the advantage by the number of tokens in each step",
+  "Code tokens have higher entropy, so their gradients are always larger",
+  "GSPO uses token-level clipping, which clips GUI tokens more often"],
+ 0,"The 1/N normalization makes every token's coefficient equal. Grouped by step, that becomes a length-proportional vote. That is the core observation of OS-Helix Appendix E."],
+["Under Step-balanced GSPO with α_GUI = α_code = 1 (unclipped branch), what happens to the per-token gradient coefficient as a code step gets longer?",
+ ["It shrinks like 1/|a_k|, because the step's total coefficient A·w·ω_k is fixed and shared among its tokens",
+  "It stays constant, so longer steps still get more total push",
+  "It grows with |a_k| to compensate for dilution",
+  "It becomes zero once |a_k| exceeds the clip range"],
+ 0,"∂L/∂log π(y_t) = −A·w·ω_k/|a_k|. Summed over the step, the length cancels. Long steps get the same total budget, spread thinner."],
+["Predict the behavior: you enable thinking mode. Hard GUI steps now carry ~800 reasoning tokens and easy clicks ~20. All actions are GUI. Under standard GSPO, what do you expect?",
+ ["The same imbalance appears without any code: reasoning-heavy steps dominate the sample's log-ratio, its clipping, and its aggregate gradient, so behavior on those steps gets most of the update. Step-balancing by action step would equalize them",
+  "No imbalance, because all actions are the same modality",
+  "Easy clicks dominate because they are more frequent",
+  "GSPO becomes identical to GRPO when thinking is enabled"],
+ 0,"|a_k| counts all loss-bearing tokens, including reasoning. The bias comes from token count, not modality. OS-Helix ran with thinking disabled, but the decomposition applies to any variable-length step."],
+["Design: you set α_code = 0.5, α_GUI = 1. What does this actually do?",
+ ["It dampens code steps' influence in both directions: less reinforcement when A>0, less suppression when A<0, and less say in the clip decision. It is a symmetric down-weighting, not a penalty on choosing code",
+  "It adds a negative reward every time the agent writes code",
+  "It doubles the probability of GUI actions at inference",
+  "It halves the length of generated scripts"],
+ 0,"ω_k scales the step's contribution to log w and thus its gradient, whatever the sign of A. To bias routing you would need reward or advantage terms, or SFT priors."],
+["A sample with A>0 is clipped under GSPO because its 400-token code step drifted (δ̄_code large), while its four GUI steps did not drift at all. What happens to learning on those GUI steps from this sample?",
+ ["They get zero gradient from this sample, since the clipped branch is constant in θ for the whole sample. Their useful signal is lost because of another step's drift",
+  "They still get the full gradient because clipping is per step",
+  "They get a larger gradient to compensate",
+  "Only their reasoning tokens are clipped"],
+ 0,"GSPO clips per sample. Step-balanced weighting makes it less likely that one long step's drift alone trips the clip. A per-step clip would be a further design option, with its own trade-offs."],
+["Adaptive-group process rewards set r_pr = r_act × r_group rather than a sum. A click that executes perfectly (r_act = 1) sits inside a subgoal group judged harmful (r_group = 0). Why is the product the better choice here?",
+ ["The product acts as an AND gate: executing well inside a harmful subgoal earns nothing, while a sum would still give it half credit and reinforce competently doing the wrong thing",
+  "The product has lower variance than the sum for every trajectory",
+  "Sums cannot be standardized across steps",
+  "The product lets the group score ignore action execution"],
+ 0,"Credit should need both correct execution and useful purpose. The paper's ablation found sum aggregation agreed less with human step labels."],
+["Why might Step-balanced GSPO still fail to produce good GUI/code routing on its own?",
+ ["It only removes a deterministic length multiplier from each step's scalar coefficient. Token gradient directions and norms, clipping, and reward-modality correlations still shape the update, and routing priors mostly come from SFT",
+  "Because it changes the reward function",
+  "Because it disables the old policy in the ratio",
+  "Because it forces exactly 50% code actions"],
+ 0,"The paper states this limitation explicitly. Its ablations also show SFT provides the main gain, and RL without SFT barely helps."],
+["Why does OS-Helix bias task sampling toward tasks with estimated success near 0.5 when using group-relative advantages?",
+ ["Groups where all rollouts succeed or all fail have zero standardized advantage and give no learning signal. Outcome variance p(1−p) is largest near 0.5",
+  "Tasks near 0.5 are shorter, which saves compute",
+  "It ensures the code-action fraction stays at 50%",
+  "Because the clip range is centered at 0.5"],
+ 0,"Group-relative advantages need within-group spread. Frontier sampling spends rollouts where that spread exists."]
+];
+Q.forEach(q=>{const c=q[1][q[2]]; const o=shuffle(q[1].slice()); q[1]=o; q[2]=o.indexOf(c);});
+shuffle(Q);
+let scr=0,ans=0; const qz=$('quiz');
+Q.forEach((q,i)=>{
+  const d=document.createElement('div'); d.className='q card';
+  const h=document.createElement('p'); h.innerHTML=`<b>Q${i+1}. ${q[0]}</b>`; d.appendChild(h);
+  const ex=document.createElement('div'); ex.className='exp';
+  const bs=[];
+  q[1].forEach((o,j)=>{
+    const b=document.createElement('button'); b.textContent=o; bs.push(b);
+    b.onclick=()=>{
+      if(d.dataset.done)return; d.dataset.done=1; ans++;
+      if(j===q[2]){b.className='ok'; scr++;}
+      else{b.className='bad'; bs[q[2]].className='ok';}
+      ex.textContent=(j===q[2]?'✓ Correct. ':'✗ Not quite. ')+q[3];
+      $('score').textContent=`Score: ${scr}/${ans} answered (of ${Q.length})`+(ans===Q.length?(scr>=Q.length-1?' · Excellent':' · Review the flashcards and §3–§4'):'');
+    };
+    d.appendChild(b);
+  });
+  d.appendChild(ex); qz.appendChild(d);
+});
+
+// ---- math rendering ----
+window.addEventListener('load',()=>{ if(window.renderMathInElement){ renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'\\(',right:'\\)',display:false}],throwOnError:false}); }});
+</script></body></html>
