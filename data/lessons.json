@@ -1,6 +1,96 @@
 {
   "lessons": [
     {
+      "date": "2026-10-18",
+      "slug": "dpo-from-first-principles",
+      "title": "DPO from first principles: Bradley–Terry, KL-regularized RL, and why the partition function cancels",
+      "tags": [
+        "fundamentals"
+      ],
+      "summary": "Derive DPO step by step, from Bradley–Terry and the closed-form KL-regularized optimum to the implicit reward, the Z-cancelling loss and its gradient, then see why chosen likelihoods can fall, how IPO fixes deterministic preferences, and how to build step-level DPO pairs for computer-use agents.",
+      "minutes": 15,
+      "path": "lessons/2026-10-18-dpo-from-first-principles.html",
+      "cards": [
+        {
+          "q": "Why does the partition function Z(x) drop out of the DPO loss?",
+          "choices": [
+            "Implicit rewards of two responses to the same prompt both contain β log Z(x), and Bradley–Terry only uses their difference",
+            "Z(x) equals 1 for autoregressive models",
+            "DPO approximates Z(x) with Monte Carlo samples",
+            "The reference model absorbs Z(x) during SFT"
+          ],
+          "a": "Implicit rewards of two responses to the same prompt both contain β log Z(x), and Bradley–Terry only uses their difference",
+          "explanation": "r = β log π/π_ref + β log Z(x). Z depends on x, not y, so it cancels only for same-prompt comparisons. Truncated or different contexts break this."
+        },
+        {
+          "q": "What does the DPO gradient weight σ(r̂_l − r̂_w) do?",
+          "choices": [
+            "Concentrates the update on pairs the implicit reward currently mis-ranks and switches it off for solved pairs",
+            "Scales the update by response length",
+            "Keeps the policy close to π_ref by penalizing KL directly",
+            "Weights pairs by labeler confidence"
+          ],
+          "a": "Concentrates the update on pairs the implicit reward currently mis-ranks and switches it off for solved pairs",
+          "explanation": "It is the logistic-regression gradient. Without it (plain unlikelihood), DPO's authors saw degeneration."
+        },
+        {
+          "q": "DPO loss falls but the chosen responses' log-prob also falls. Which mechanism explains this?",
+          "choices": [
+            "Shared representations move along W_chosen − W_rejected. For similar pairs that direction mostly raises third responses, so both pair likelihoods can drop (likelihood displacement)",
+            "The reference model is updated together with the policy",
+            "β is too large",
+            "The learning rate schedule warms up too slowly"
+          ],
+          "a": "Shared representations move along W_chosen − W_rejected. For similar pairs that direction mostly raises third responses, so both pair likelihoods can drop (likelihood displacement)",
+          "explanation": "Only the margin is optimized. Razin et al. show severity tracks chosen/rejected embedding similarity (CHES). Independent logits can't displace."
+        },
+        {
+          "q": "Why does IPO replace −log σ(β·margin) with a squared loss toward 1/(2τ)?",
+          "choices": [
+            "With deterministic preferences, the BT optimum needs infinite margins, so DPO keeps pushing whatever β is. A finite target bounds the drift",
+            "Squared losses converge faster on GPUs",
+            "IPO needs no reference policy",
+            "To make the loss length-normalized"
+          ],
+          "a": "With deterministic preferences, the BT optimum needs infinite margins, so DPO keeps pushing whatever β is. A finite target bounds the drift",
+          "explanation": "Azar et al.: under BT, the KL regularizer gets weaker as preferences become deterministic, and finite datasets look deterministic."
+        },
+        {
+          "q": "In π* ∝ π_ref·exp(r/β), what happens to a high-reward response with π_ref = 0 as β → 0?",
+          "choices": [
+            "It still gets zero probability: the reference sets the support, and DPO can only reweight within it",
+            "It gets all the probability mass",
+            "It gets probability exp(r)",
+            "It depends on Z(x)"
+          ],
+          "a": "It still gets zero probability: the reference sets the support, and DPO can only reweight within it",
+          "explanation": "The optimum is multiplicative in π_ref. Exploration of new behavior needs sampling (online RL), not offline pairs."
+        },
+        {
+          "q": "Why are step-level GUI pairs (corrected vs erroneous action at the same state) better DPO data than pass/fail trajectory pairs?",
+          "choices": [
+            "The shared history cancels, so the gradient touches only the two candidate actions: precise credit, no length smearing, and no stochastic-environment approximation",
+            "They have larger margins because they are shorter",
+            "They don't need a reference model",
+            "They let you include screenshot tokens in the log-prob"
+          ],
+          "a": "The shared history cancels, so the gradient touches only the two candidate actions: precise credit, no length smearing, and no stochastic-environment approximation",
+          "explanation": "Trajectory pairs put one scalar weight on every token of both episodes (the outcome-reward credit problem). UI-TARS uses step-level pairs with an SFT reference."
+        },
+        {
+          "q": "Which tokens should enter log π_θ(τ) − log π_ref(τ) for an agent trajectory?",
+          "choices": [
+            "Only loss-masked assistant tokens (thoughts + actions). Environment observation terms are identical under both models and cancel",
+            "All tokens, including screenshots, for completeness",
+            "Only the final action of the episode",
+            "Only the instruction tokens"
+          ],
+          "a": "Only loss-masked assistant tokens (thoughts + actions). Environment observation terms are identical under both models and cancel",
+          "explanation": "The policy controls only action factors. It's the same mask as SFT. The sum is unnormalized, so watch length effects."
+        }
+      ]
+    },
+    {
       "date": "2026-10-17",
       "slug": "step-balanced-gspo-hybrid-cua",
       "title": "Step-balanced GSPO: who gets the gradient when a GUI agent can also write code",

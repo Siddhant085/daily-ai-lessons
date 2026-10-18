@@ -1,0 +1,535 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DPO from first principles: Bradley–Terry, KL-regularized RL, and why the partition function cancels</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<style>
+:root{--bg:#fafbfc;--fg:#1d2433;--muted:#667;--card:#fff;--line:#e3e7ee;--soft:#f3f5f9;--soft2:#f7f8fb;--code:#eef1f6;
+--blue:#4f7cff;--red:#d64545;--amber:#e0a100;--violet:#8a5cf6;--green:#3aa55b;
+--note:#f2f6ff;--warn:#fff9e8;--mine:#f6f2ff;--bad:#fdf2f2;--ok:#e3f7e8;--badbtn:#fde8e8;--ca:#3aa55b;--cb:#d64545;--cc:#8a5cf6}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1420;--fg:#e4e8f0;--muted:#9aa3b5;--card:#171d2b;--line:#2a3347;--soft:#1c2333;--soft2:#1a2030;--code:#232b3d;
+--note:#172340;--warn:#2d2614;--mine:#231b38;--bad:#341a1d;--ok:#163322;--badbtn:#3a1c1f;--ca:#52c474;--cb:#f06b6b;--cc:#a888ff}}
+body{font-family:Inter,system-ui,sans-serif;max-width:900px;margin:0 auto;padding:24px;color:var(--fg);line-height:1.6;background:var(--bg)}
+a{color:var(--blue)}
+h1{font-size:2rem;margin-bottom:4px;line-height:1.25}h2{border-bottom:2px solid var(--line);padding-bottom:4px;margin-top:40px}h3{margin-bottom:4px}
+code,.mono{font-family:'JetBrains Mono',monospace;font-size:.9em;background:var(--code);padding:1px 4px;border-radius:4px}
+pre{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;font-size:.82em;line-height:1.5}
+pre code{background:none;padding:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 20px;margin:16px 0}
+.note{border-left:4px solid var(--blue);background:var(--note)}.warn{border-left:4px solid var(--amber);background:var(--warn)}.mine{border-left:4px solid var(--violet);background:var(--mine)}.badbox{border-left:4px solid var(--red);background:var(--bad)}
+table{border-collapse:collapse;width:100%;font-size:.9em}td,th{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}th{background:var(--soft)}
+.tablewrap{overflow-x:auto}
+.ctl{display:flex;gap:14px 20px;flex-wrap:wrap;margin:10px 0;align-items:center}
+.ctl label{font-size:.9em}input[type=range]{vertical-align:middle;width:150px}
+select{font:inherit;font-size:.9em;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 6px}
+.q{margin:14px 0}.q button{display:block;margin:5px 0;text-align:left;width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);cursor:pointer;font:inherit}
+.q button:hover{border-color:var(--blue)}
+.q button.ok{background:var(--ok);border-color:var(--green)}.q button.bad{background:var(--badbtn);border-color:var(--red)}.exp{font-size:.92em;color:var(--fg);opacity:.9;margin-top:6px}
+details{background:var(--soft2);border:1px dashed var(--line);border-radius:8px;padding:8px 12px;margin:10px 0}summary{cursor:pointer;font-weight:600}
+.btn{padding:7px 12px;border-radius:8px;border:1px solid var(--blue);background:var(--blue);color:#fff;font:inherit;font-size:.88em;cursor:pointer}.btn.sec{background:transparent;color:var(--blue)}
+.pill{display:inline-block;font-size:.78em;padding:1px 8px;border-radius:999px;background:var(--code);margin-right:4px}
+.eq{background:var(--soft);padding:10px 14px;border-radius:8px;overflow-x:auto;margin:10px 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.grid2>div{background:var(--soft2);border-radius:8px;padding:10px;font-size:.92em}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.grid3>div{background:var(--soft2);border-radius:8px;padding:10px;font-size:.88em}
+@media(max-width:700px){.grid2,.grid3{grid-template-columns:1fr}body{padding:14px}}
+.obj li{margin:4px 0}
+.flip{perspective:900px;cursor:pointer;margin:10px 0}
+.flip-inner{position:relative;width:100%;min-height:150px;transition:transform .45s;transform-style:preserve-3d}
+.flip.on .flip-inner{transform:rotateY(180deg)}
+.flip-f,.flip-b{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--card);overflow:auto}
+.flip-b{transform:rotateY(180deg);background:var(--note);border-color:var(--blue)}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.85em;margin:6px 0}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:middle}
+svg text{fill:var(--fg)}
+.small{font-size:.88em;color:var(--muted)}
+.readout{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin:10px 0}
+.readout div{background:var(--soft2);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:.88em}
+.readout b{font-family:'JetBrains Mono',monospace}
+</style></head><body><nav id="dal-nav" style="position:sticky;top:0;z-index:9999;display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;background:#111827;font:600 15px/1.2 system-ui,sans-serif"><a href="../" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">← Home</a><a href="../archive.html" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">Archive</a><a href="../review.html" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">Review</a></nav>
+<h1>DPO from first principles: Bradley–Terry, KL-regularized RL, and why the partition function cancels</h1>
+<p style="color:var(--muted)">Track: <b>fundamentals</b> · Lesson for Siddhant · Oct 18, 2026 · ~15 min · Main paper: Rafailov et al., DPO (<a href="https://arxiv.org/abs/2305.18290">arXiv:2305.18290</a>)</p>
+
+<div class="card note">
+<b>Learning objectives.</b> By the end you should be able to:
+<ul class="obj">
+<li>Derive the Bradley–Terry (logistic) preference model and its reward-model loss, and say exactly which degree of freedom of the reward it can never identify.</li>
+<li>Derive the closed-form optimum of \(\max_\pi \mathbb{E}_\pi[r]-\beta\,\mathrm{KL}(\pi\|\pi_{\text{ref}})\) two ways (Gibbs' inequality and a Lagrangian), and say what \(\beta\) does at the two extremes.</li>
+<li>Invert that optimum into an implicit reward, show why \(Z(x)\) cancels in pairwise comparisons, and write the DPO loss and its gradient from memory.</li>
+<li>Predict DPO's training dynamics: which pairs get gradient, why chosen <i>and</i> rejected log-probs can both fall (likelihood displacement), and what β and an SFT term change.</li>
+<li>Apply DPO to computer-use agents: trajectory-level vs step-level pairs, which tokens enter the log-prob sum, length effects, and where the bandit derivation stops being exact.</li>
+</ul>
+</div>
+
+<div class="card note"><b>Warm-up: questions from earlier lessons.</b> Answer each in your head before reading on.
+<ol>
+<li><b>Oct 14 (<a href="https://siddhant085.github.io/daily-ai-lessons/lessons/2026-10-14-credit-assignment-process-rewards.html">credit assignment</a>):</b> outcome-reward REINFORCE/GRPO puts one scalar on every token of a trajectory. What goes wrong for a 30-step episode where step 22 was the only mistake?</li>
+<li><b>Oct 17 (<a href="https://siddhant085.github.io/daily-ai-lessons/lessons/2026-10-17-step-balanced-gspo-hybrid-cua.html">step-balanced GSPO</a>):</b> GSPO length-normalizes the sequence log-ratio. Inside a multi-action sample, how is the log-ratio still weighted across steps?</li>
+<li><b>Oct 16 (<a href="https://siddhant085.github.io/daily-ai-lessons/lessons/2026-10-16-kv-cache-prefill-decode.html">KV cache</a>):</b> scoring a fixed, already-generated trajectory under a model needs which phase, prefill or decode? Why does that matter for screenshot-heavy contexts?</li>
+<li><b>Oct 16 again:</b> in an agent rollout, which tokens carry loss and which are only context?</li>
+</ol>
+<details><summary>Check yourself</summary>(1) The mistake and the 29 good steps get the same sign of update, so credit is smeared across the whole episode. Keep this in mind: a trajectory-level DPO pair does the same thing, with one scalar weight on the whole sequence. (2) As a token-count-weighted average of per-step log-ratios, so long steps dominate. DPO uses an <i>unnormalized</i> sum, which makes that effect stronger (§7.3). (3) Only prefill. Every token is already known, so one parallel forward pass gives all log-probs. That makes the reference model's log-probs cheap to precompute once, but each pass still pays the full O(n²) attention over long screenshot contexts. (4) Only the assistant's generated tokens (thought + action) are in the loss. Screenshots, instructions, and tool outputs are conditioning with loss mask 0. The DPO log-prob sum uses the same mask.</details></div>
+
+<div class="card warn"><b>Hook.</b> You have thousands of pairs of computer-use trajectories on the same tasks, one that the verifier passed and one it failed. Can you get the policy that PPO-RLHF would have produced on these preferences without training a reward model, without sampling a single rollout during training, and with a loss as simple as logistic regression? DPO says yes, <i>provided you believe one modeling assumption and one closed-form identity</i>. Then a second surprise: when you run it, the dashboard can show the success trajectories' log-probability <b>going down</b> while the loss improves. By the end of this lesson both facts should feel inevitable.</div>
+
+<h2>1. Bradley–Terry: preferences as logistic regression on reward differences</h2>
+<p><b>Intuition first.</b> A labeler (or a verifier, or you) sees two responses and picks one. Suppose each response has a latent "goodness" \(r(x,y)\) and the judgment is noisy. If the noise on each option is i.i.d. Gumbel, a standard random-utility result (not from the papers below) says the choice probability is a logistic function of the <i>difference</i>:</p>
+<div class="eq">$$u_i = r(x,y_i)+\varepsilon_i,\ \ \varepsilon_i\overset{iid}{\sim}\text{Gumbel}(0,1)\ \Longrightarrow\ p(y_1\succ y_2\mid x)=\frac{e^{r(x,y_1)}}{e^{r(x,y_1)}+e^{r(x,y_2)}}=\sigma\big(r(x,y_1)-r(x,y_2)\big).$$</div>
+<p>This is the Bradley–Terry (BT) model, Eq. 1 in the DPO paper. Fitting it by maximum likelihood on a dataset \(\mathcal D=\{(x,y_w,y_l)\}\) is binary classification with logit \(r_\phi(x,y_w)-r_\phi(x,y_l)\):</p>
+<div class="eq">$$\mathcal L_R(r_\phi)=-\mathbb E_{(x,y_w,y_l)\sim\mathcal D}\big[\log\sigma\big(r_\phi(x,y_w)-r_\phi(x,y_l)\big)\big].$$</div>
+<div class="grid2">
+<div><b>The unidentifiable direction.</b> Add any \(f(x)\) to the reward and every BT probability is unchanged. DPO formalizes this as reward <i>equivalence classes</i> (\(r\sim r'\iff r-r'=f(x)\)) and proves that the class determines both the preference distribution (Lemma 1) and the KL-regularized optimal policy (Lemma 2). InstructGPT handles the same degeneracy in practice by adding a bias so that labeler demonstrations score 0 on average before RL.</div>
+<div><b>Rankings, not just pairs.</b> InstructGPT had labelers rank \(K\) outputs per prompt and trained on all \(\binom K2\) induced pairs, with the loss normalized by \(1/\binom K2\). The design detail that matters: they put all pairs from one prompt into a <i>single batch element</i>, because shuffling correlated pairs across the epoch made the RM overfit. Plackett–Luce is the full-ranking generalization, and the DPO derivation goes through for it too (DPO App. A.3).</div>
+</div>
+
+<h2>2. The KL-regularized objective and its closed-form optimum</h2>
+<p>Standard RLHF (Ziegler → Stiennon → InstructGPT, as written in DPO Eq. 3) maximizes reward while staying near a reference policy, usually the SFT model:</p>
+<div class="eq">$$\max_{\pi}\ \mathbb E_{x\sim\mathcal D,\ y\sim\pi(\cdot|x)}\big[r(x,y)\big]-\beta\,\mathbb D_{\mathrm{KL}}\big[\pi(y|x)\,\|\,\pi_{\text{ref}}(y|x)\big].$$</div>
+<p>The KL term keeps the policy where the reward model is accurate and keeps it from collapsing onto a single high-reward answer. In PPO practice it is folded into the reward: \(r - \beta(\log\pi_\theta-\log\pi_{\text{ref}})\). InstructGPT applies it as a per-token penalty. For a sequence, the sum of per-token KLs along the sampled path is the sequence KL (DPO's reward–KL frontier experiments report exactly this sum).</p>
+
+<h3>Derivation A (Gibbs' inequality, as in DPO App. A.1)</h3>
+<p>Fix \(x\). Pull \(\beta\) out, flip the sign, and multiply and divide by a normalizer:</p>
+<div class="eq">$$\begin{aligned}
+\max_\pi \mathbb E_{y\sim\pi}\Big[r-\beta\log\tfrac{\pi}{\pi_{\text{ref}}}\Big]
+&=-\beta\,\min_\pi \mathbb E_{y\sim\pi}\Big[\log\tfrac{\pi(y|x)}{\pi_{\text{ref}}(y|x)}-\tfrac1\beta r(x,y)\Big]\\
+&=-\beta\,\min_\pi \mathbb E_{y\sim\pi}\Big[\log\frac{\pi(y|x)}{\tfrac{1}{Z(x)}\pi_{\text{ref}}(y|x)\,e^{r(x,y)/\beta}}-\log Z(x)\Big]\\
+&=-\beta\,\min_\pi\Big[\mathbb D_{\mathrm{KL}}\big(\pi\,\|\,\pi^*\big)-\log Z(x)\Big],\qquad Z(x)=\sum_y\pi_{\text{ref}}(y|x)\,e^{r(x,y)/\beta}.
+\end{aligned}$$</div>
+<p>\(Z(x)\) doesn't depend on \(\pi\), and KL ≥ 0 with equality iff the distributions match. So</p>
+<div class="eq">$$\boxed{\ \pi^*(y|x)=\frac{1}{Z(x)}\,\pi_{\text{ref}}(y|x)\,\exp\!\Big(\frac{r(x,y)}{\beta}\Big)\ }\qquad\text{and the optimal value is }\ \beta\log Z(x).$$</div>
+<h3>Derivation B (Lagrangian; same answer, shows uniqueness)</h3>
+<p>Maximize \(\sum_y\pi(y)\big[r(y)-\beta\log\pi(y)+\beta\log\pi_{\text{ref}}(y)\big]+\lambda\big(\sum_y\pi(y)-1\big)\). Setting \(\partial/\partial\pi(y)=0\) gives \(r(y)-\beta\log\frac{\pi(y)}{\pi_{\text{ref}}(y)}-\beta+\lambda=0\), so \(\pi(y)\propto\pi_{\text{ref}}(y)e^{r(y)/\beta}\). The objective is strictly concave in \(\pi\) (the \(-\beta\sum\pi\log\pi\) term), so this stationary point is the unique maximizer. Plugging back in gives the value: \(\mathbb E_{\pi^*}[r]-\mathbb E_{\pi^*}[r-\beta\log Z]=\beta\log Z\), a soft-max of the reward under \(\pi_{\text{ref}}\). DPO §5.2 reads this as the soft value function of the reference policy, and argues it is the term PPO has to estimate with a learned critic (high variance if you leave it out).</p>
+<div class="grid3">
+<div><b>β → ∞:</b> \(e^{r/\beta}\to1\), so \(\pi^*\to\pi_{\text{ref}}\). The reward is ignored.</div>
+<div><b>β → 0:</b> \(\pi^*\) concentrates on \(\arg\max_y r\) <i>within the support of</i> \(\pi_{\text{ref}}\). A response with \(\pi_{\text{ref}}=0\) never gets mass at any β.</div>
+<div><b>In between:</b> \(\log\pi^*-\log\pi_{\text{ref}}=r/\beta-\log Z\). β is a temperature that converts reward units into log-probability units.</div>
+</div>
+<p class="small">Why don't we just sample from \(\pi^*\)? \(Z(x)\) sums over all sequences, which is exponential in length. The DPO paper calls it expensive to estimate even when you have the MLE reward. The rest of the lesson is about never computing it.</p>
+
+<h2>3. Inverting the optimum: your policy is an implicit reward model</h2>
+<p>Take the log of the boxed equation and solve for \(r\):</p>
+<div class="eq">$$r(x,y)=\beta\log\frac{\pi_r(y|x)}{\pi_{\text{ref}}(y|x)}+\beta\log Z(x).$$</div>
+<p>This holds for <i>any</i> reward and its optimal policy. Now apply it to the true reward \(r^*\) and plug it into BT. BT only sees differences, and \(\beta\log Z(x)\) is the same for both responses to the same prompt, so it cancels:</p>
+<div class="eq">$$p^*(y_w\succ y_l|x)=\sigma\Big(\beta\log\frac{\pi^*(y_w|x)}{\pi_{\text{ref}}(y_w|x)}-\beta\log\frac{\pi^*(y_l|x)}{\pi_{\text{ref}}(y_l|x)}\Big).$$</div>
+<p>Replace \(\pi^*\) with a parametric \(\pi_\theta\) and do maximum likelihood, exactly as for the reward model:</p>
+<div class="eq">$$\boxed{\ \mathcal L_{\text{DPO}}(\pi_\theta;\pi_{\text{ref}})=-\mathbb E_{(x,y_w,y_l)\sim\mathcal D}\Big[\log\sigma\Big(\underbrace{\beta\log\tfrac{\pi_\theta(y_w|x)}{\pi_{\text{ref}}(y_w|x)}}_{\hat r_\theta(x,y_w)}-\underbrace{\beta\log\tfrac{\pi_\theta(y_l|x)}{\pi_{\text{ref}}(y_l|x)}}_{\hat r_\theta(x,y_l)}\Big)\Big]\ }$$</div>
+<div class="card mine"><b>Why this is not a trick (DPO Thm. 1).</b> One worry is that restricting rewards to the form \(\beta\log\frac{\pi}{\pi_{\text{ref}}}\) loses expressivity. It doesn't. Every equivalence class contains exactly one member of that form: the representative \(r-\beta\log Z_r(x)\), i.e. the one whose induced \(\pi\) normalizes to 1. Since the BT likelihood and the optimal policy depend only on the class (Lemmas 1–2), fitting BT over this parameterization is fitting BT over all rewards, and its optimal policy is \(\pi_\theta\) itself. Azar et al. (IPO, Prop. 4) strengthen this: DPO and RLHF-with-the-BT-MLE-reward share optimal policies even when the true preferences are <i>not</i> BT, as long as a BT minimizer exists.</div>
+<p><b>Precise hidden assumptions</b>, each of which becomes a failure mode later: (i) a single \(x\) shared by both responses, which is what makes \(Z(x)\) cancel; (ii) the nonparametric optimum is what you get, which ignores parameter sharing (§4.3); (iii) a BT minimizer exists with finite rewards, which fails for deterministic preferences (§5, IPO); (iv) the "action" \(y\) is chosen as one bandit arm, which matters for multi-step environments (§7).</p>
+
+<div class="q card" id="cc1"><b>Concept check.</b></div>
+
+<h3>Implementation (adapted from DPO App. B, with an agent loss mask)</h3>
+<pre><code>def seq_logp(model, batch):
+    # batch.input_ids interleaves instruction, screenshot tokens, tool outputs, and assistant turns
+    logits = model(batch.input_ids, pixel_values=batch.pixels).logits[:, :-1]
+    tok_lp = logits.log_softmax(-1).gather(-1, batch.input_ids[:, 1:, None]).squeeze(-1)
+    return (tok_lp * batch.loss_mask[:, 1:]).sum(-1)      # SUM over assistant (thought+action) tokens only
+
+with torch.no_grad():                                     # pi_ref is frozen: can be precomputed offline
+    ref_w, ref_l = seq_logp(ref, chosen), seq_logp(ref, rejected)
+pi_w, pi_l = seq_logp(policy, chosen), seq_logp(policy, rejected)
+rw, rl = beta * (pi_w - ref_w), beta * (pi_l - ref_l)      # implicit rewards r_hat
+loss = -F.logsigmoid(rw - rl).mean()
+log(reward_margin=(rw - rl).mean(), reward_acc=(rw > rl).float().mean(),
+    chosen_logratio=(pi_w - ref_w).mean(), rejected_logratio=(pi_l - ref_l).mean())  # watch the sign of chosen!</code></pre>
+
+<h2>4. The DPO gradient: what each update actually does</h2>
+<p>Let \(u=\hat r_\theta(x,y_w)-\hat r_\theta(x,y_l)\). Since \(\frac{d}{du}[-\log\sigma(u)]=-(1-\sigma(u))=-\sigma(-u)\):</p>
+<div class="eq">$$\nabla_\theta\mathcal L_{\text{DPO}}=-\beta\,\mathbb E\Big[\underbrace{\sigma\big(\hat r_\theta(x,y_l)-\hat r_\theta(x,y_w)\big)}_{\text{large when the implicit RM ranks the pair wrongly}}\Big(\underbrace{\nabla_\theta\log\pi_\theta(y_w|x)}_{\text{push chosen up}}-\underbrace{\nabla_\theta\log\pi_\theta(y_l|x)}_{\text{push rejected down}}\Big)\Big]$$</div>
+<p>and each sequence term is a sum over loss-masked tokens: \(\nabla\log\pi_\theta(y|x)=\sum_{t\in\text{mask}}\nabla\log\pi_\theta(y_t|x,y_{&lt;t})\).</p>
+<div class="grid2">
+<div><b>The weight is the whole story.</b> Pairs the implicit reward already gets right (\(u\gg0\)) have weight ≈ 0. Pairs it gets wrong have weight ≈ 1. The DPO paper reports that dropping this weight (plain "unlikelihood": maximize \(\log\pi(y_w)\), minimize \(\log\pi(y_l)\)) made models degenerate into repeated tokens. Minimizing a log-likelihood without bound always has a degenerate solution, and the sigmoid weight is what turns the push off.</div>
+<div><b>What β does.</b> β appears twice. It is a gradient scale, and it sets how big a raw log-ratio margin \(\Delta=u/\beta\) has to be before the weight \(\sigma(-\beta\Delta)\) dies off. With small β, the loss is only satisfied once the policy has moved far from \(\pi_{\text{ref}}\) in log space. With large β, a small move is enough. This matches the closed form, where small β means weak regularization.</div>
+</div>
+
+<h3>4.1 Interactive: loss, weight, and the two log-ratios</h3>
+<div class="card">
+<p>Set each response's log-ratio \(\rho=\log\pi_\theta(y)-\log\pi_{\text{ref}}(y)\), summed over its action tokens. The curves are the exact per-pair DPO loss \(-\log\sigma(\beta\Delta)\) and gradient weight \(\sigma(-\beta\Delta)\) as functions of \(\Delta=\rho_w-\rho_l\). The dot is your current pair.</p>
+<div class="ctl">
+<label>β <input type="range" id="b1" min="0.02" max="1" step="0.01" value="0.1"> <b id="b1v"></b></label>
+<label>ρ<sub>w</sub> (chosen log-ratio) <input type="range" id="rw" min="-15" max="15" step="0.1" value="3"> <b id="rwv"></b></label>
+<label>ρ<sub>l</sub> (rejected log-ratio) <input type="range" id="rl" min="-15" max="15" step="0.1" value="-1"> <b id="rlv"></b></label>
+</div>
+<div class="ctl">
+<button class="btn sec" data-v="init">At init (π<sub>θ</sub>=π<sub>ref</sub>)</button>
+<button class="btn sec" data-v="ex">Worked example</button>
+<button class="btn sec" data-v="both">Both fall</button>
+<button class="btn sec" data-v="wrong">Implicit RM wrong</button>
+<button class="btn sec" data-v="sat">Saturated</button>
+</div>
+<div class="legend"><i style="background:var(--blue)"></i>loss −log σ(βΔ) &nbsp; <i style="background:var(--amber)"></i>weight σ(−βΔ) &nbsp; <i style="background:var(--violet)"></i>current pair</div>
+<svg id="lossplot" viewBox="0 0 860 260" style="width:100%;background:var(--soft2);border:1px solid var(--line);border-radius:8px"></svg>
+<div class="readout" id="ro1"></div>
+<p class="small">Try these. (1) <b>At init</b>: Δ = 0, so loss = log 2 and weight = ½ on every pair. Every pair starts with the same push. (2) <b>Both fall</b>: the chosen log-ratio is negative, yet the loss is identical to the worked example because only Δ is visible to the loss. (3) Hold the pair fixed and slide β from 0.05 to 1. The same raw margin goes from "still learning" to "done". (4) <b>Saturated</b>: weight ≈ 0. This pair contributes almost nothing, even though DPO's loss is never exactly zero.</p>
+</div>
+
+<h3>4.2 Worked example: two trajectories</h3>
+<p>One OSWorld-style task. \(y_w\) is the trajectory that passed the verifier, \(y_l\) the one that failed. Log-probs are summed over the assistant tokens of all steps (screenshots masked). Values are illustrative, mid-training:</p>
+<div class="tablewrap"><table>
+<tr><th></th><th>\(\log\pi_\theta\)</th><th>\(\log\pi_{\text{ref}}\)</th><th>log-ratio \(\rho\)</th><th>\(\hat r=\beta\rho\) at β = 0.1</th><th>at β = 0.5</th></tr>
+<tr><td>chosen \(y_w\)</td><td>−42.0</td><td>−45.0</td><td>+3.0</td><td>+0.30</td><td>+1.50</td></tr>
+<tr><td>rejected \(y_l\)</td><td>−51.0</td><td>−50.0</td><td>−1.0</td><td>−0.10</td><td>−0.50</td></tr>
+<tr><td colspan="3"><b>margin</b> \(u=\hat r_w-\hat r_l\)</td><td>Δ = 4.0</td><td>0.40</td><td>2.00</td></tr>
+<tr><td colspan="4"><b>loss</b> \(-\log\sigma(u)\)</td><td>0.513</td><td>0.127</td></tr>
+<tr><td colspan="4"><b>weight</b> \(\sigma(-u)\)</td><td>0.401</td><td>0.119</td></tr>
+<tr><td colspan="4"><b>coefficient on</b> \(\nabla\log\pi(y_w)\) (and minus it on \(\nabla\log\pi(y_l)\)): \(\beta\sigma(-u)\)</td><td>0.040</td><td>0.060</td></tr>
+</table></div>
+<p>Check: at initialization both log-ratios are 0, so the loss is \(\log2\approx0.693\). At β = 0.1 the pair has moved to 0.513 and still carries 40% of the maximum weight. At β = 0.5 the <i>same</i> parameters give loss 0.127, and the weight has dropped to 0.119. The overall coefficient is larger only because β also multiplies the gradient.</p>
+<p><b>Same loss, opposite story.</b> Now suppose instead \(\log\pi_\theta(y_w)=-46\) (ρ<sub>w</sub> = −1) and \(\log\pi_\theta(y_l)=-55\) (ρ<sub>l</sub> = −5). Then Δ = 4 again, the loss is 0.513 again, and the weight is 0.401 again, but the success trajectory is now <b>e<sup>1</sup> ≈ 2.7× less likely</b> than under the reference. Nothing in the loss can tell these two situations apart. That is why the pseudocode above logs <code>chosen_logratio</code> separately.</p>
+
+<div class="q card" id="cc2"><b>Concept check.</b></div>
+
+<h3>4.3 Why both likelihoods fall: likelihood displacement</h3>
+<p>Razin et al. (2024) name the phenomenon in which the DPO loss goes down while \(\log\pi_\theta(y_w)\) also goes down <b>likelihood displacement</b>. They show it is not caused by multi-sample conflicts, capacity limits, or SFT. It already happens on a single prompt with single-token responses. Their mechanism, in a model where hidden embeddings \(h\) and the unembeddings \(W\) are trainable (single-token case, Thm. 1–2):</p>
+<div class="eq">$$\frac{d}{dt}\ln\pi(y^+|x)\ \text{is more negative the larger}\ \ \underbrace{\langle W_{y^+},W_{y^-}\rangle}_{\text{chosen/rejected similarity}}+\sum_{z\neq y^\pm}\pi(z|x)\,\langle W_z,\ W_{y^+}-W_{y^-}\rangle,\qquad \frac{d}{dt}\ln\pi(z|x)\propto\langle W_z,\ W_{y^+}-W_{y^-}\rangle+\text{const}.$$</div>
+<p>In words: the update moves shared parameters along the <b>difference direction</b> \(W_{y^+}-W_{y^-}\). If chosen and rejected are nearly the same vector, that difference is mostly <i>orthogonal</i> to \(W_{y^+}\), so it barely helps the chosen response. Whatever third response lines up with the difference collects the mass instead, and it can mean the opposite of the chosen one. Their headline example is that training to prefer <code>No</code> over <code>Never</code> can sharply raise <code>Yes</code>. For multi-token responses the same role is played by hidden-embedding similarity, which they summarize as the <b>CHES</b> score. High-CHES pairs drive displacement, and filtering them out fixed an unintended loss of refusals better than adding an SFT term did.</p>
+<p><b>Contrast:</b> with independent tabular logits (no parameter sharing), the gradient of \(\log\pi(A)-\log\pi(B)\) with respect to the logits is exactly \(e_A-e_B\), because the normalizer cancels in the difference. \(\pi(A)\) can then only go up. Razin et al. likewise prove that displacement cannot occur in a linear model with fixed hidden embeddings. Displacement is a property of <i>shared representations</i>, not of the DPO objective alone.</p>
+
+<h3>4.4 Interactive: a 3-response policy, step by step</h3>
+<div class="card">
+<p>Responses A (chosen), B (rejected), C (never labeled). In <b>shared-feature</b> mode, logits are \(z=Wh\) with fixed 2-D unembeddings \(W_A=(\cos\varphi,\sin\varphi)\), \(W_B=(\cos\varphi,-\sin\varphi)\), \(W_C=(0,c)\) and a trainable hidden vector \(h\) (Razin et al.'s unconstrained-features setup, with only \(h\) trained here). \(\pi_{\text{ref}}\) is the initial policy at \(h_0=(4,1.5)\). \(\varphi\) sets how similar A and B are, and \(c\) sets how much C lines up with \(W_A-W_B=(0,2\sin\varphi)\). The toy runs 300 steps of plain gradient descent. Scrub or play it.</p>
+<div class="ctl">
+<label>Parameterization <select id="mode"><option value="feat">shared features z = W h</option><option value="tab">independent logits (tabular)</option></select></label>
+<label>Loss <select id="lossk"><option value="dpo">DPO</option><option value="ipo">IPO (squared, target 1/(2τ))</option></select></label>
+<label>A–B half-angle φ <input type="range" id="phi" min="5" max="80" step="1" value="20"> <b id="phiv"></b></label>
+<label>C alignment c <input type="range" id="cy" min="-0.5" max="1.2" step="0.05" value="0.8"> <b id="cyv"></b></label>
+</div>
+<div class="ctl">
+<label>β (or τ for IPO) <input type="range" id="b2" min="0.05" max="1" step="0.05" value="0.1"> <b id="b2v"></b></label>
+<label>SFT weight λ on −log π(A) <input type="range" id="lam" min="0" max="0.6" step="0.05" value="0"> <b id="lamv"></b></label>
+<label>training step <input type="range" id="stp" min="0" max="300" step="1" value="300"> <b id="stpv"></b></label>
+<button class="btn" id="play">▶ Play</button>
+</div>
+<div class="ctl">
+<button class="btn sec" data-t="disp">Similar pair → displacement</button>
+<button class="btn sec" data-t="tab">Tabular (no sharing)</button>
+<button class="btn sec" data-t="dis">Dissimilar pair</button>
+<button class="btn sec" data-t="sft">+ SFT term</button>
+<button class="btn sec" data-t="ipo">IPO</button>
+<button class="btn sec" data-t="bigb">Large β</button>
+</div>
+<div class="legend"><i style="background:var(--ca)"></i>A (chosen) &nbsp; <i style="background:var(--cb)"></i>B (rejected) &nbsp; <i style="background:var(--cc)"></i>C (unlabeled)</div>
+<svg id="toy" viewBox="0 0 860 270" style="width:100%;background:var(--soft2);border:1px solid var(--line);border-radius:8px"></svg>
+<div class="readout" id="ro2"></div>
+<p class="small">Try these. (1) <b>Similar pair</b>: π(A) rises at first, because B's mass is the easiest to take. Then it falls below its starting value while C takes over. The loss improves the whole time. (2) <b>Tabular</b>: same data, π(A) → 1. (3) <b>Dissimilar pair</b> (φ = 60°, same c): A wins the long run. The rule for the long run in this toy is whether \(c>\sin\varphi\), i.e. whether C or A projects more onto the push direction. (4) <b>+ SFT term</b>: anchoring \(\log\pi(A)\) directly stops the drift. (5) <b>IPO</b>: the margin stops at 1/(2τ), so the drift is bounded, but here it isn't zero. (6) <b>Large β</b>: the weight dies at a smaller margin, so less total movement within the budget. With unlimited steps, though, the DPO loss never reaches zero and keeps pushing.</p>
+</div>
+
+<div class="q card" id="cc3"><b>Concept check.</b></div>
+
+<h2>5. One more hidden assumption: offline data and deterministic preferences (IPO)</h2>
+<p>Azar et al. (2023) write both RLHF and DPO as special cases of \(\Psi\)PO, \(\max_\pi\mathbb E_{y\sim\pi,y'\sim\mu}[\Psi(p^*(y\succ y'))]-\tau\,\mathrm{KL}(\pi\|\pi_{\text{ref}})\), with \(\Psi(q)=\log\frac{q}{1-q}\) recovering the BT/DPO case. Their key observation: if \(y\) always beats \(y'\) (\(p^*=1\)), BT needs \(r(y)-r(y')\to\infty\), so \(\pi^*(y')=0\) <b>for every τ</b>. The KL regularizer gets weaker the more deterministic the preferences are. With finite data this is the common case: a pair seen once is "deterministic" in the empirical distribution. They argue RLHF is partly protected because a trained reward model is <i>underfit</i> (regularized, early-stopped), whereas DPO, by skipping the RM, also skips that implicit regularization. Their toy experiments show DPO driving a never-winning action to 0 and a dominant action to 1 regardless of τ.</p>
+<div class="eq">$$\text{IPO (}\Psi=\text{identity), sampled loss:}\qquad \mathcal L_{\text{IPO}}=\mathbb E_{(y_w,y_l)\sim\mathcal D}\Big[\Big(\log\frac{\pi(y_w)\,\pi_{\text{ref}}(y_l)}{\pi(y_l)\,\pi_{\text{ref}}(y_w)}-\frac{1}{2\tau}\Big)^2\Big]$$</div>
+<p>IPO <i>regresses</i> the same log-ratio margin Δ to a finite target \(1/(2\tau)\) instead of pushing it to infinity. Once the target is hit, the gradient is zero, and τ really controls the distance to \(\pi_{\text{ref}}\). (Razin et al. find likelihood displacement under IPO too, so a bounded margin limits the drift but doesn't remove the shared-feature mechanism. Compare the IPO preset above.)</p>
+
+<h2>6. DPO vs PPO-RLHF vs online RL (GRPO-style)</h2>
+<div class="tablewrap"><table>
+<tr><th></th><th>PPO-RLHF (InstructGPT)</th><th>Online RL with a verifier (GRPO/GSPO; <a href="https://siddhant085.github.io/daily-ai-lessons/lessons/2026-10-14-credit-assignment-process-rewards.html">Oct 14</a>, <a href="https://siddhant085.github.io/daily-ai-lessons/lessons/2026-10-17-step-balanced-gspo-hybrid-cua.html">Oct 17</a>)</th><th>DPO (offline)</th></tr>
+<tr><td>Signal</td><td>Learned RM \(r_\phi\) from BT; per-token KL penalty to SFT; PPO with a value function (InstructGPT also mixes in pretraining gradients, "PPO-ptx")</td><td>Programmatic reward (task verifier); group-normalized advantage; clipped ratio to \(\pi_{\text{old}}\)</td><td>Implicit reward \(\beta\log\pi_\theta/\pi_{\text{ref}}\); no RM, no critic</td></tr>
+<tr><td>Data</td><td>On-policy samples scored by the RM</td><td>On-policy rollouts in live environments</td><td>Fixed pairs, typically from \(\pi_{\text{ref}}\) or another policy; no sampling during training</td></tr>
+<tr><td>Typical failure</td><td>Over-optimizing the RM where it's inaccurate (reward hacking); RM ↔ policy distribution shift</td><td>Sparse or zero signal (all-pass/all-fail groups); expensive environment rollouts; credit assignment</td><td>Overfitting deterministic pairs (IPO); likelihood displacement; pairs drift off-policy as \(\pi_\theta\) moves, and nothing re-samples to correct it</td></tr>
+<tr><td>Exploration</td><td>Yes (samples)</td><td>Yes (samples)</td><td>None. It can only reweight what's in the pairs, within the support of \(\pi_{\text{ref}}\)</td></tr>
+</table></div>
+<p><b>Distribution shift, concretely.</b> The derivation makes \(\pi_{\text{ref}}\) the policy you regularize toward <i>and</i> implicitly the one the comparisons are about. If your pairs came from some other model, \(\pi_{\text{ref}}\) can assign them odd likelihoods and the implicit rewards are measured from the wrong baseline. DPO's own fix, used when no SFT model matching the data existed: first SFT on the chosen responses and use that as \(\pi_{\text{ref}}\). The general cure is to re-sample pairs from the current policy (iterative/on-policy DPO). That moves DPO toward the online column, and UI-TARS's online bootstrapping does this for GUI agents (§7).</p>
+<div class="card mine"><b>A useful mental model (my synthesis).</b> PPO and GRPO <i>estimate</i> \(\pi^*\) by sampling from the current policy and correcting with importance ratios. DPO <i>fits</i> \(\pi^*\)'s log-ratio to labels at fixed points. That makes it cheap and stable, but it says nothing about the probability of responses it never sees, and the shared-feature mechanism in §4.3 decides where that unseen mass goes.</div>
+
+<h2>7. Computer-use agents: what is "y", and which pairs to build</h2>
+<h3>7.1 The response is a trajectory interleaved with observations</h3>
+<p>A trajectory is \(\tau=(o_1,a_1,o_2,a_2,\dots,o_T,a_T)\): screenshots or AX-trees \(o_t\) from the environment, and assistant turns \(a_t\) (thought + action tokens) from the policy. Its probability factorizes as \(p_\theta(\tau)=\prod_t\pi_\theta(a_t|h_t)\,P(o_{t+1}|h_t,a_t)\). The environment terms are the same under \(\pi_\theta\) and \(\pi_{\text{ref}}\), so they <b>cancel in the log-ratio</b>:</p>
+<div class="eq">$$\log\frac{p_\theta(\tau)}{p_{\text{ref}}(\tau)}=\sum_{t=1}^{T}\ \sum_{j\in a_t}\Big[\log\pi_\theta(a_{t,j}|h_t,a_{t,&lt;j})-\log\pi_{\text{ref}}(a_{t,j}|h_t,a_{t,&lt;j})\Big].$$</div>
+<p>That is the <code>loss_mask</code> in the pseudocode: only assistant tokens count. Screenshot tokens are conditioning. They're processed in prefill for both models but never scored. Scoring screenshot tokens would be wrong twice over: the policy doesn't generate them, and including them would add huge, irrelevant log-prob terms to both sides.</p>
+<div class="card warn"><b>Where the derivation stops being exact (my analysis, not from the papers).</b> §2 treats \(y\) as one arm of a bandit. For a deterministic environment, a trajectory is fully determined by the action sequence, so "trajectory = arm" holds and the closed form holds over action sequences. For a stochastic environment (pop-ups, load timing, network), the KL-regularized optimum over trajectories differs from the bandit formula, because the policy can't choose \(o_{t+1}\). Pairwise DPO on trajectories is then a principled-looking heuristic rather than an exact solution, and an unlucky observation can make a good policy's trajectory the "rejected" one. Step-level pairs on the <i>same</i> state sidestep this.</div>
+
+<h3>7.2 Trajectory-level vs step-level preferences</h3>
+<div class="grid2">
+<div><b>Trajectory-level</b> (\(x\)=task, \(y_w\)=a passing episode, \(y_l\)=a failing one). Cheap to label: the verifier does it. But it inherits the outcome-reward credit problem from <a href="https://siddhant085.github.io/daily-ai-lessons/lessons/2026-10-14-credit-assignment-process-rewards.html">Oct 14</a>. One scalar weight multiplies the gradient of every token in both episodes, so 25 shared-quality steps in the failing episode get pushed down along with the one bad click. The two episodes also visit different screens, so they don't even share the context after the first divergence.</div>
+<div><b>Step-level</b> (\(x\)=history up to state \(s_\tau\), \(y_w\)=a correct action \(a'_\tau\), \(y_l\)=the erroneous \(a_\tau\)). Both sequences share the prefix \(h_\tau\), so the whole history cancels except through conditioning. The gradient touches only the tokens of the two candidate actions, which is precise credit assignment for free. UI-TARS builds exactly these pairs. During online bootstrapping it collects error steps with corrected actions (reflection tuning). For SFT it trains with the loss only on the corrected step, and then runs DPO on (\(a'_\tau\) ≻ \(a_\tau\) | \(s_\tau\)) with the SFT model as \(\pi_{\text{ref}}\), so the model learns to avoid the error, not just to imitate the fix.</div>
+</div>
+<p>Step-level pairs need a state where you know both a bad and a good action: human correction, reflection, a process reward model (Oct 14), or a branched rollout from a saved VM snapshot. These are the expensive part. Trajectory pairs are cheap but noisy. A practical recipe is to use trajectory pairs where the episodes differ early, and step-level pairs at known error states.</p>
+
+<h3>7.3 Length effects: DPO's sum vs GSPO's mean</h3>
+<p>DPO's margin is an <b>unnormalized sum</b> over action tokens. Write each step's average per-token log-ratio as \(\bar\delta_k\) and its token count as \(|a_k|\):</p>
+<div class="eq">$$\Delta=\rho_w-\rho_l=\sum_{k\in y_w}|a_k|\,\bar\delta_k-\sum_{k\in y_l}|a_k|\,\bar\delta_k .$$</div>
+<p>Consequences: (a) a <b>longer</b> trajectory (more steps, longer thoughts, inline code) can move its \(\rho\) much further with the same per-token shift. For example, 12 steps × 30 tokens × 0.01 nats/token = 3.6 nats, which adds 0.36 to the margin at β = 0.1. (b) Pushing \(\rho_l\) down is easiest by lowering many tokens a little, so long rejected sequences give cheap margin. (c) In hybrid GUI+code agents, verbose code steps dominate the sum, which is the same token-weighting problem that <a href="https://siddhant085.github.io/daily-ai-lessons/lessons/2026-10-17-step-balanced-gspo-hybrid-cua.html">step-balanced GSPO</a> fixes for RL, but without GSPO's 1/|y| normalization. If your chosen/rejected lengths differ systematically (e.g., successful runs are shorter), the implicit reward partly learns length. Check length-matched reward accuracy, and consider per-step-normalized or step-level pairs.</p>
+
+<h3>7.4 GUI pairs are almost always high-similarity pairs</h3>
+<p>A corrected click and an erroneous click often differ in a few coordinate or element-ID tokens: <code>click(512, 300)</code> vs <code>click(518, 302)</code>, or the same thought with a different final element. In Razin et al.'s terms this is the high-similarity (high-CHES) regime where likelihood displacement is strongest, and the displaced mass can go to a <i>third</i> action, such as a neighbouring element or a different action type. Practical guards: log the chosen log-ratio and the probability of the top non-pair action at held-out states; add an SFT/NLL term on chosen actions (UI-TARS already SFTs on corrected steps before DPO); filter or down-weight near-duplicate pairs; or reach for IPO/bounded-margin variants.</p>
+
+<h3>7.5 Systems notes (ties to <a href="https://siddhant085.github.io/daily-ai-lessons/lessons/2026-10-16-kv-cache-prefill-decode.html">Oct 16</a>)</h3>
+<ul>
+<li>\(\pi_{\text{ref}}\) log-probs for a fixed dataset are a <b>single prefill pass</b> per sequence. Precompute them once and store one float per sequence, and you don't need the reference model in GPU memory during training.</li>
+<li>Step-level pairs share the long screenshot-heavy prefix \(h_\tau\). Run the prefix once and branch into both candidate actions (prefix/KV sharing), instead of paying the O(n²) attention twice.</li>
+<li>Truncating history for memory changes \(x\). Do it <i>identically</i> for \(\pi_\theta\), \(\pi_{\text{ref}}\), chosen and rejected, or \(Z(x)\) no longer cancels: the two sides are then conditioned on different prompts.</li>
+</ul>
+
+<h2>8. Misconceptions</h2>
+<div class="card badbox">
+<ul>
+<li><b>"DPO doesn't use a reward model."</b> It uses one. It is <i>implicit</i>: \(\beta\log\pi_\theta/\pi_{\text{ref}}\) is the reward model, trained with exactly the BT loss. That is the point of the "your LM is secretly a reward model" framing.</li>
+<li><b>"Lower DPO loss means higher likelihood of good responses."</b> The loss sees only the margin. Both log-ratios can fall (§4.2, §4.3).</li>
+<li><b>"β is the KL coefficient, so DPO enforces a KL budget."</b> In the population optimum, yes. On finite, near-deterministic pairs, the implied optimum can push margins without bound regardless of β (IPO's argument). In practice β mostly sets the margin scale where the gradient weight dies off.</li>
+<li><b>"\(Z(x)\) cancels, so the prompt doesn't matter."</b> It cancels only between two responses to the <i>same</i> \(x\). Comparing implicit rewards across different prompts or different truncated contexts is meaningless.</li>
+<li><b>"DPO can teach new behaviors like RL can."</b> It reweights within the pairs. Nothing is sampled, and a response with zero reference probability can never be reached (§2, β → 0 column).</li>
+<li><b>"Include screenshot tokens in the log-prob, they're part of the sequence."</b> They're environment output. Their terms are policy-independent in the true likelihood and must be masked.</li>
+</ul></div>
+
+<h2>9. Key takeaways</h2>
+<div class="card note"><ol>
+<li>BT turns preferences into logistic regression on reward <i>differences</i>, so rewards are identified only up to \(f(x)\).</li>
+<li>The KL-regularized optimum is \(\pi^*\propto\pi_{\text{ref}}e^{r/\beta}\) (Gibbs' inequality), with value \(\beta\log Z(x)\).</li>
+<li>Inverting gives \(r=\beta\log\frac{\pi}{\pi_{\text{ref}}}+\beta\log Z(x)\). \(Z\) cancels in same-prompt comparisons, which is the whole trick. The DPO loss is the BT loss with that implicit reward plugged in.</li>
+<li>The gradient is weighted by \(\sigma(\hat r_l-\hat r_w)\): mis-ranked pairs get pushed, solved pairs are ignored, and without the weight training degenerates.</li>
+<li>Only the margin is constrained. With shared representations, similar chosen/rejected pairs displace mass to third responses, so chosen likelihood can fall. Tabular parameterizations can't do this.</li>
+<li>Deterministic preferences let DPO ignore β. IPO regresses the margin to a finite target instead.</li>
+<li>For agents, mask non-assistant tokens. Step-level pairs on a shared state give precise credit and remove the environment-stochasticity caveat. Watch length effects in the unnormalized sum and displacement on near-identical action pairs.</li>
+</ol></div>
+<div class="card"><b>One-paragraph summary.</b> Bradley–Terry models a preference as a sigmoid of a reward difference. Fitting it is the classic RLHF reward-model loss, and it can never identify a per-prompt offset. The KL-regularized RLHF objective has a closed-form optimum \(\pi^*=\pi_{\text{ref}}e^{r/\beta}/Z\), which is useless to sample from directly because \(Z\) sums over all sequences. Inverting it shows that any policy defines an implicit reward \(\beta\log\pi/\pi_{\text{ref}}\) up to \(\beta\log Z(x)\). That term cancels when you compare two responses to the same prompt, so you can fit the policy to preferences directly with logistic regression. That is DPO. Its gradient pushes chosen up and rejected down in proportion to how wrongly the implicit reward ranks the pair, but it constrains only the margin. With shared representations, similar pairs can lower both likelihoods and leak mass to unlabeled responses, and with deterministic data the KL "budget" disappears (the problem IPO fixes). For computer-use agents, the log-ratio is a sum over masked action tokens only. Step-level pairs at a shared state (as in UI-TARS) give precise credit, while trajectory pairs reintroduce outcome-reward smearing, length bias, and a stochastic-environment approximation.</div>
+
+<h2>10. Flashcards</h2>
+<p class="small">Click a card to flip it.</p>
+<div id="cards"></div>
+
+<h2>11. Quiz</h2>
+<p class="small">Options are shuffled each time the page loads. Click an option for instant feedback.</p>
+<div id="quiz"></div>
+<div class="card" id="score">Score: <b id="sc">0</b> / <b id="tot">0</b> answered · <span id="pct"></span></div>
+
+<h2>12. Sources (read for this lesson)</h2>
+<ul>
+<li>Rafailov, Sharma, Mitchell, Ermon, Manning, Finn. <i>Direct Preference Optimization: Your Language Model is Secretly a Reward Model.</i> <a href="https://arxiv.org/abs/2305.18290">arXiv:2305.18290</a>. Used for the BT/RLHF setup, the closed-form optimum (App. A.1), the equivalence-class lemmas and Thm. 1, the DPO gradient and the unlikelihood ablation, the PPO soft-value discussion, and implementation details.</li>
+<li>Ouyang et al. <i>Training language models to follow instructions with human feedback</i> (InstructGPT). <a href="https://arxiv.org/abs/2203.02155">arXiv:2203.02155</a>. Used for the K-way ranking RM loss, the per-prompt batching, RM bias normalization, the per-token KL penalty, and PPO-ptx.</li>
+<li>Azar et al. <i>A General Theoretical Paradigm to Understand Learning from Human Preferences</i> (ΨPO / IPO). <a href="https://arxiv.org/abs/2310.12036">arXiv:2310.12036</a>. Used for the deterministic-preference failure, the IPO loss, and Prop. 4.</li>
+<li>Razin et al. <i>Unintentional Unalignment: Likelihood Displacement in Direct Preference Optimization.</i> <a href="https://arxiv.org/abs/2410.08847">arXiv:2410.08847</a>. Used for the displacement mechanism, the No/Never → Yes example, CHES, and the no-displacement result for fixed embeddings.</li>
+<li>Qin et al. <i>UI-TARS: Pioneering Automated GUI Interaction with Native Agents.</i> <a href="https://arxiv.org/abs/2501.12326">arXiv:2501.12326</a>. Used for online trace bootstrapping, reflection tuning, and step-level Agent DPO with an SFT reference.</li>
+</ul>
+<p class="small">Marked as my analysis/synthesis, not claims from these papers: the stochastic-environment caveat (§7.1), the length-effect arithmetic and the GSPO comparison (§7.3), the GUI-pairs-are-high-similarity argument (§7.4), the systems notes (§7.5), the 2-D toy in §4.4, and the worked-example numbers (illustrative, checked in Python). The Gumbel → logistic step in §1 is a standard random-utility result.</p>
+
+<script>
+const $=id=>document.getElementById(id);
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim()||'#888';}
+const sig=x=>1/(1+Math.exp(-x));
+const softplus=x=> x>30? 0 : (x<-30? -x : Math.log1p(Math.exp(-x))); // -log sigma(x)
+
+function mountMC(el, question, choices, correctIdx, explain){
+  const wrap=document.createElement('div');
+  const qq=document.createElement('p'); qq.innerHTML='<b>'+question+'</b>'; wrap.appendChild(qq);
+  const exp=document.createElement('div'); exp.className='exp';
+  const opts=shuffle(choices.map((c,i)=>({c,i})));
+  const btns=[];
+  opts.forEach(({c,i})=>{
+    const b=document.createElement('button'); b.textContent=c; btns.push({b,i});
+    b.onclick=()=>{
+      if(wrap.dataset.done)return; wrap.dataset.done=1;
+      if(i===correctIdx){b.className='ok'; exp.textContent='✓ Correct. '+explain;}
+      else{b.className='bad'; btns.forEach(o=>{if(o.i===correctIdx)o.b.className='ok';}); exp.textContent='✗ Not quite. '+explain;}
+    };
+    wrap.appendChild(b);
+  });
+  wrap.appendChild(exp); el.appendChild(wrap);
+}
+
+mountMC($('cc1'),
+  'You compute implicit rewards for a chosen response under prompt x and a rejected response under a <i>different</i> prompt x′ (say, the same task with a different truncated history), then apply the DPO loss. What breaks?',
+  ['β log Z(x) and β log Z(x′) no longer cancel, so the margin includes an arbitrary, policy-dependent offset and the loss is no longer the BT likelihood of anything',
+   'Nothing. Z cancels between any two sequences because it is a constant',
+   'Only the gradient scale changes, by a factor of Z(x)/Z(x′)',
+   'The reference model must be retrained on x′'],
+  0,
+  'Z is constant in y, not in x. Cancellation needs the same conditioning context on both sides, so history truncation must be identical for chosen and rejected.');
+
+mountMC($('cc2'),
+  'Two pairs have identical DPO loss 0.513 at β = 0.1. In pair 1, ρ_w = +3 and ρ_l = −1. In pair 2, ρ_w = −1 and ρ_l = −5. Which statement is correct?',
+  ['They get the same weight σ(−u) ≈ 0.40, and the loss cannot tell them apart. Only pair 1 has made the chosen response more likely than under π_ref',
+   'Pair 2 gets a larger gradient because its chosen log-ratio is negative',
+   'Pair 2 must have a lower loss because its rejected response fell further',
+   'Pair 1 is saturated and gets zero gradient'],
+  0,
+  'Loss and weight depend only on Δ = ρ_w − ρ_l = 4 in both pairs. Where the mass went is invisible to the objective, which is why you log the chosen log-ratio separately.');
+
+mountMC($('cc3'),
+  'In the toy, why does π(A) go up for the tabular model but eventually down for the shared-feature model on the same pair?',
+  ['Tabular gradients move only A and B logits (e_A − e_B). Shared features move h along W_A − W_B, which also raises any response aligned with that direction (C), and C can outgrow A',
+   'The tabular model uses a smaller β',
+   'The shared-feature model has a bug in its softmax',
+   'DPO loss is non-convex in the tabular case'],
+  0,
+  'Displacement needs parameter sharing. With independent logits the normalizer cancels in the margin, so π(A) is monotone. With z = Wh, mass goes to whatever projects most onto the push direction. Long-run, C wins iff c > sin φ.');
+
+// ---- 4.1 loss/weight plot ----
+const PRE1={init:{b1:0.1,rw:0,rl:0},ex:{b1:0.1,rw:3,rl:-1},both:{b1:0.1,rw:-1,rl:-5},wrong:{b1:0.1,rw:-2,rl:4},sat:{b1:0.3,rw:10,rl:-12}};
+function plot1(){
+  const b=+$('b1').value, rw=+$('rw').value, rl=+$('rl').value;
+  $('b1v').textContent=b.toFixed(2); $('rwv').textContent=rw.toFixed(1); $('rlv').textContent=rl.toFixed(1);
+  const D=rw-rl, u=b*D, L=softplus(u), w=sig(-u);
+  const W=860,H=260,x0=50,x1=830,y0=225,y1=15, XR=40, YL=3;
+  const X=d=>x0+(x1-x0)*(Math.max(-XR,Math.min(XR,d))+XR)/(2*XR);
+  const YLs=l=>y0-(y0-y1)*Math.min(l,YL)/YL;
+  const YW=v=>y0-(y0-y1)*v;
+  const fg=css('--fg'),line=css('--line'),bl=css('--blue'),am=css('--amber'),vi=css('--violet');
+  let g=`<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y0}" stroke="${line}"/><line x1="${X(0)}" y1="${y0}" x2="${X(0)}" y2="${y1}" stroke="${line}" stroke-dasharray="3 3"/>`;
+  for(let t=-40;t<=40;t+=10) g+=`<text x="${X(t)}" y="${y0+16}" font-size="10" text-anchor="middle">${t}</text>`;
+  g+=`<text x="${x1}" y="${y0+30}" font-size="11" text-anchor="end">Δ = ρ_w − ρ_l (nats)</text>`;
+  [0,1,2,3].forEach(l=>g+=`<text x="${x0-6}" y="${YLs(l)+4}" font-size="10" text-anchor="end" fill="${bl}">${l}</text>`);
+  [0,0.5,1].forEach(v=>g+=`<text x="${x1+4}" y="${YW(v)+4}" font-size="10" fill="${am}">${v}</text>`);
+  let pL='',pW='';
+  for(let i=0;i<=200;i++){const d=-XR+2*XR*i/200; pL+=(i?'L':'M')+X(d).toFixed(1)+','+YLs(softplus(b*d)).toFixed(1); pW+=(i?'L':'M')+X(d).toFixed(1)+','+YW(sig(-b*d)).toFixed(1);}
+  g+=`<path d="${pL}" fill="none" stroke="${bl}" stroke-width="2.5"/><path d="${pW}" fill="none" stroke="${am}" stroke-width="2.5" stroke-dasharray="6 3"/>`;
+  g+=`<line x1="${X(D)}" y1="${y0}" x2="${X(D)}" y2="${y1}" stroke="${vi}" stroke-width="1.5"/><circle cx="${X(D)}" cy="${YLs(L)}" r="6" fill="${vi}"/><circle cx="${X(D)}" cy="${YW(w)}" r="6" fill="${vi}" opacity=".6"/>`;
+  $('lossplot').innerHTML=g;
+  const status = Math.abs(u)<1e-9?'tie (e.g. at init): weight ½, loss log 2': (u<0?'implicit RM ranks the pair wrongly: weight > ½, strong push': (w<0.05?'saturated: almost no gradient':'ranked correctly, still partly pushed'));
+  $('ro1').innerHTML=`<div>implicit r̂_w = βρ_w: <b>${(b*rw).toFixed(3)}</b></div><div>implicit r̂_l = βρ_l: <b>${(b*rl).toFixed(3)}</b></div><div>margin u = βΔ: <b>${u.toFixed(3)}</b></div><div>loss −log σ(u): <b>${L.toFixed(3)}</b></div><div>weight σ(−u): <b>${w.toFixed(3)}</b></div><div>grad coefficient βσ(−u): <b>${(b*w).toFixed(4)}</b></div><div style="grid-column:1/-1">${status}${rw<0?' · <b>chosen is less likely than under π_ref</b>':''}</div>`;
+}
+['b1','rw','rl'].forEach(id=>$(id).addEventListener('input',plot1));
+document.querySelectorAll('[data-v]').forEach(btn=>btn.onclick=()=>{const p=PRE1[btn.dataset.v];Object.entries(p).forEach(([k,v])=>$(k).value=v);plot1();});
+plot1();
+
+// ---- 4.4 three-response toy ----
+const NSTEP=300, LR_DPO=2, LR_IPO=0.04, H0=[4,1.5];
+function softmax(z){const m=Math.max(...z);const e=z.map(v=>Math.exp(v-m));const s=e.reduce((a,b)=>a+b,0);return e.map(v=>v/s);}
+function simulate(o){
+  const ph=o.phi*Math.PI/180, Wm=[[Math.cos(ph),Math.sin(ph)],[Math.cos(ph),-Math.sin(ph)],[0,o.c]];
+  const zf=h=>Wm.map(w=>w[0]*h[0]+w[1]*h[1]);
+  const z0=zf(H0), lr=o.loss==='ipo'?LR_IPO:LR_DPO, tgt=1/(2*o.beta);
+  let h=H0.slice(), z=z0.slice(); const out=[];
+  for(let t=0;t<=NSTEP;t++){
+    const zz=o.mode==='tab'?z:zf(h), p=softmax(zz);
+    const D=(zz[0]-zz[1])-(z0[0]-z0[1]);
+    const loss=o.loss==='ipo'?(D-tgt)*(D-tgt):softplus(o.beta*D);
+    out.push({p,D,loss,rhoA:Math.log(p[0])-Math.log(softmax(z0)[0])});
+    const gD=o.loss==='ipo'?-2*(D-tgt):o.beta*sig(-o.beta*D); // -dL/dD
+    if(o.mode==='tab'){
+      z=[z[0]+lr*(gD+o.lam*(1-p[0])), z[1]+lr*(-gD+o.lam*(-p[1])), z[2]+lr*(o.lam*(-p[2]))];
+    } else {
+      const EW=[0,1].map(k=>p[0]*Wm[0][k]+p[1]*Wm[1][k]+p[2]*Wm[2][k]);
+      h=[0,1].map(k=>h[k]+lr*(gD*(Wm[0][k]-Wm[1][k])+o.lam*(Wm[0][k]-EW[k])));
+    }
+  }
+  return out;
+}
+function opts2(){return {mode:$('mode').value,loss:$('lossk').value,phi:+$('phi').value,c:+$('cy').value,beta:+$('b2').value,lam:+$('lam').value};}
+let TRAJ=null;
+function run2(){ const o=opts2(); $('phiv').textContent=o.phi+'°'; $('cyv').textContent=o.c.toFixed(2); $('b2v').textContent=o.beta.toFixed(2); $('lamv').textContent=o.lam.toFixed(2); TRAJ=simulate(o); draw2(); }
+function draw2(){
+  const s=+$('stp').value; $('stpv').textContent=s;
+  const x0=50,x1=830,y0=235,y1=15;
+  const X=t=>x0+(x1-x0)*t/NSTEP, Y=v=>y0-(y0-y1)*v;
+  const cols=[css('--ca'),css('--cb'),css('--cc')], line=css('--line'), fg=css('--fg');
+  let g=`<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y0}" stroke="${line}"/><line x1="${x0}" y1="${y0}" x2="${x0}" y2="${y1}" stroke="${line}"/>`;
+  [0,0.25,0.5,0.75,1].forEach(v=>g+=`<text x="${x0-6}" y="${Y(v)+4}" font-size="10" text-anchor="end">${v}</text><line x1="${x0}" y1="${Y(v)}" x2="${x1}" y2="${Y(v)}" stroke="${line}" opacity=".4"/>`);
+  for(let t=0;t<=NSTEP;t+=50) g+=`<text x="${X(t)}" y="${y0+16}" font-size="10" text-anchor="middle">${t}</text>`;
+  g+=`<text x="${x1}" y="${y0+30}" font-size="11" text-anchor="end">training step</text><text x="${x0+6}" y="${y1+10}" font-size="11">π(·)</text>`;
+  g+=`<line x1="${X(0)}" y1="${Y(TRAJ[0].p[0])}" x2="${x1}" y2="${Y(TRAJ[0].p[0])}" stroke="${cols[0]}" stroke-dasharray="3 4" opacity=".7"/>`;
+  [0,1,2].forEach(k=>{let d='';TRAJ.forEach((r,t)=>{d+=(t?'L':'M')+X(t).toFixed(1)+','+Y(r.p[k]).toFixed(1);});g+=`<path d="${d}" fill="none" stroke="${cols[k]}" stroke-width="2.5"/>`;});
+  g+=`<line x1="${X(s)}" y1="${y0}" x2="${X(s)}" y2="${y1}" stroke="${fg}" opacity=".5"/>`;
+  [0,1,2].forEach(k=>g+=`<circle cx="${X(s)}" cy="${Y(TRAJ[s].p[k])}" r="5" fill="${cols[k]}"/>`);
+  $('toy').innerHTML=g;
+  const r=TRAJ[s], r0=TRAJ[0];
+  let peak=0,pk=0; TRAJ.forEach((q,t)=>{if(q.p[0]>peak){peak=q.p[0];pk=t;}});
+  const below=TRAJ.findIndex((q,t)=>t>0&&q.p[0]<r0.p[0]-1e-9);
+  $('ro2').innerHTML=`<div>π(A) chosen: <b>${r.p[0].toFixed(3)}</b> (start ${r0.p[0].toFixed(3)})</div><div>π(B) rejected: <b>${r.p[1].toFixed(3)}</b></div><div>π(C) unlabeled: <b>${r.p[2].toFixed(3)}</b></div><div>margin Δ: <b>${r.D.toFixed(2)}</b></div><div>pair loss: <b>${r.loss.toFixed(3)}</b> (start ${r0.loss.toFixed(3)})</div><div>chosen log-ratio ρ_A: <b>${r.rhoA.toFixed(2)}</b></div><div style="grid-column:1/-1">peak π(A) = ${peak.toFixed(3)} at step ${pk}; ${below>0?`π(A) first drops below its starting value at step ${below} → <b>likelihood displacement</b>`:'π(A) never drops below its start within 300 steps'}.</div>`;
+}
+const PRE2={disp:{mode:'feat',lossk:'dpo',phi:20,cy:0.8,b2:0.1,lam:0},tab:{mode:'tab',lossk:'dpo',phi:20,cy:0.8,b2:0.1,lam:0},dis:{mode:'feat',lossk:'dpo',phi:60,cy:0.8,b2:0.1,lam:0},sft:{mode:'feat',lossk:'dpo',phi:20,cy:0.8,b2:0.1,lam:0.3},ipo:{mode:'feat',lossk:'ipo',phi:20,cy:0.8,b2:0.1,lam:0},bigb:{mode:'feat',lossk:'dpo',phi:20,cy:0.8,b2:1,lam:0}};
+['mode','lossk','phi','cy','b2','lam'].forEach(id=>$(id).addEventListener('input',run2));
+$('stp').addEventListener('input',draw2);
+document.querySelectorAll('[data-t]').forEach(btn=>btn.onclick=()=>{const p=PRE2[btn.dataset.t];Object.entries(p).forEach(([k,v])=>$(k).value=v);$('stp').value=NSTEP;run2();});
+let timer=null;
+$('play').onclick=()=>{ if(timer){clearInterval(timer);timer=null;$('play').textContent='▶ Play';return;} $('stp').value=0; $('play').textContent='❚❚ Pause';
+  timer=setInterval(()=>{let v=+$('stp').value+3; if(v>=NSTEP){v=NSTEP;clearInterval(timer);timer=null;$('play').textContent='▶ Play';} $('stp').value=v; draw2();},30); };
+run2();
+if(window.matchMedia){const mq=window.matchMedia('(prefers-color-scheme: dark)'); if(mq.addEventListener) mq.addEventListener('change',()=>{plot1();draw2();});}
+
+// ---- flashcards ----
+const CARDS=[
+ ['Closed-form optimum of max E_π[r] − β KL(π‖π_ref)','π*(y|x) = π_ref(y|x) · exp(r(x,y)/β) / Z(x), with Z(x) = Σ_y π_ref e^{r/β}. Optimal value = β log Z(x). Proof: rewrite the objective as −β[KL(π‖π*) − log Z] and apply Gibbs\' inequality.'],
+ ['Implicit reward and why Z cancels','r(x,y) = β log(π/π_ref) + β log Z(x). BT uses r(x,y_w) − r(x,y_l), and the β log Z(x) term is identical for the same x, so it drops out.'],
+ ['DPO loss','−E log σ( β log π_θ(y_w)/π_ref(y_w) − β log π_θ(y_l)/π_ref(y_l) ): the BT reward-model loss with the implicit reward plugged in.'],
+ ['DPO gradient and its weight','∇L = −β E[ σ(r̂_l − r̂_w) (∇log π(y_w) − ∇log π(y_l)) ]. The weight is large for mis-ranked pairs and ≈0 for solved ones. Without it (unlikelihood), training degenerates.'],
+ ['Likelihood displacement: mechanism','The update moves shared representations along W_{y+} − W_{y−}. For similar pairs that is nearly orthogonal to the chosen response, so mass flows to whatever aligns with the difference and both pair likelihoods can fall. Impossible with independent logits.'],
+ ['IPO\'s fix for deterministic preferences','Under BT, p* = 1 needs infinite reward gaps, so DPO ignores β. IPO regresses the log-ratio margin to 1/(2τ) with a squared loss, so the gradient vanishes at a finite margin.'],
+ ['Agent DPO: which tokens, which pairs','Log-ratio = sum over loss-masked assistant tokens (environment terms cancel; screenshots masked). Step-level pairs at a shared state s_τ cancel the prefix and give precise credit. Trajectory pairs smear credit and add length bias.']
+];
+const cbox=$('cards');
+CARDS.forEach(([q,a])=>{
+  const d=document.createElement('div'); d.className='flip';
+  d.innerHTML=`<div class="flip-inner"><div class="flip-f"><span class="pill">Q</span> ${q}</div><div class="flip-b"><span class="pill">A</span> ${a}</div></div>`;
+  d.onclick=()=>d.classList.toggle('on');
+  cbox.appendChild(d);
+});
+
+// ---- end quiz ----
+const Q=[
+["Why can DPO skip training an explicit reward model without changing which policy is optimal (under BT)?",
+ ["Every reward equivalence class (rewards differing by f(x)) contains exactly one reward of the form β log π/π_ref, and BT likelihoods and the KL-optimal policy depend only on the class. So fitting BT over policy-parameterized rewards loses nothing",
+  "Because the reward model and the policy share weights in practice",
+  "Because Z(x) equals 1 for language models",
+  "Because DPO uses a lower learning rate than PPO"],
+ 0,"That is DPO's Theorem 1 with Lemmas 1–2. The reparameterization chooses the class representative whose induced policy normalizes, so no expressivity is lost."],
+["In the KL-regularized objective, what happens to π* as β → 0, and what does it say about responses with π_ref(y|x) = 0?",
+ ["π* concentrates on the highest-reward responses within the support of π_ref. A zero-reference response never gets mass at any β, because π* ∝ π_ref·e^{r/β}",
+  "π* becomes uniform over all responses",
+  "π* → π_ref regardless of reward",
+  "Zero-reference responses get infinite mass when their reward is highest"],
+ 0,"The multiplicative form means π_ref sets the support. Small β is a low temperature over the reward inside that support. DPO inherits this: it can only reweight, never explore."],
+["Predict: you train DPO on near-duplicate GUI action pairs, e.g. click(512,300) ≻ click(518,302). The loss and reward accuracy improve steadily. At held-out states the chosen action's probability falls and a neighbouring element's click becomes the argmax. Which explanation fits the mechanism best?",
+ ["Likelihood displacement: the pair's representations are highly similar, so the update direction (difference of the two) barely aligns with the chosen action and instead raises a third action that projects onto it",
+  "β is too large, so the KL term forces the policy back to π_ref",
+  "The reference model was not frozen",
+  "The sigmoid weight is 1 for all pairs, so the model overfits"],
+ 0,"Only the margin is optimized, and with shared features the mass goes to whatever aligns with W+ − W−. Razin et al. tie its severity to embedding similarity (CHES). Mitigations: an SFT term on chosen, filtering near-duplicates, monitoring the chosen log-ratio."],
+["Two pairs: pair P has implicit-reward margin u = −2 (mis-ranked); pair Q has u = +5. How do their DPO gradients compare?",
+ ["P is weighted by σ(2) ≈ 0.88 and Q by σ(−5) ≈ 0.007. DPO focuses almost entirely on pairs the implicit RM gets wrong",
+  "Both get equal weight because DPO loss is averaged over pairs",
+  "Q gets more gradient because it has the larger margin",
+  "P gets zero gradient because its margin is negative"],
+ 0,"The weight σ(r̂_l − r̂_w) is the 'how wrong am I' term. It is the logistic-regression gradient, and it is what keeps DPO from degenerating like plain unlikelihood training."],
+["Why does IPO regress the margin to 1/(2τ) instead of using −log σ(β·margin)?",
+ ["With deterministic (or once-seen) preferences, the BT optimum needs an infinite margin, so DPO keeps pushing whatever β is. A squared loss toward a finite target zeroes the gradient at a bounded distance from π_ref",
+  "Squared losses are cheaper to compute",
+  "Because IPO assumes preferences follow Bradley–Terry more strictly than DPO",
+  "To remove the need for a reference model"],
+ 0,"Azar et al. show the KL regularizer gets weaker as preferences become deterministic under BT. Identity-Ψ gives a bounded target. It limits drift but doesn't eliminate the shared-feature displacement mechanism."],
+["For a computer-use trajectory τ = (o1, a1, o2, a2, …), why is it correct to compute log π_θ(τ) − log π_ref(τ) by summing only assistant (thought+action) tokens?",
+ ["The environment transition terms P(o_{t+1}|h_t,a_t) are the same under both models and cancel in the ratio. Screenshot tokens are observations, not policy outputs",
+  "Screenshot tokens are too long to fit in memory",
+  "The DPO paper requires all prompts to be text-only",
+  "Including screenshots would make Z(x) not cancel"],
+ 0,"The policy only controls the action factors. Scoring observation tokens would add policy-independent (and meaningless) terms. In code this is exactly the SFT loss mask."],
+["Design: you have verifier-labeled pass/fail trajectories, plus a reflection pipeline that can produce a corrected action at a failure state. How should the step-level pairs differ from trajectory pairs, and why are they better?",
+ ["Use (corrected action ≻ erroneous action | same history s_τ). The shared prefix cancels, so the gradient touches only the two candidate actions, which is precise credit without smearing over 30 steps and without the stochastic-environment approximation",
+  "Concatenate all corrected actions into one long chosen trajectory so the margin is larger",
+  "Use the corrected action as chosen and a random action from another task as rejected",
+  "Step-level pairs are worse because shorter sequences have smaller margins"],
+ 0,"This is the UI-TARS reflection-tuning + Agent DPO recipe (with SFT as π_ref). Same state means Z(x) cancels exactly and credit is localized."],
+["Your chosen trajectories are systematically shorter than rejected ones (successful runs finish early). Under DPO's summed log-ratio, what risk should you check for?",
+ ["The margin can grow by lowering many tokens in the longer rejected sequences a little. The implicit reward then partly learns 'shorter is better' instead of what made runs succeed. Check length-matched reward accuracy or use step-level/normalized pairs",
+  "No risk, because DPO normalizes by sequence length",
+  "Shorter chosen sequences always receive larger gradients per token",
+  "The reference model log-probs become undefined"],
+ 0,"Δ = Σ_k |a_k| δ̄_k is an unnormalized sum. Unlike GSPO's 1/|y|, DPO lets token count act as margin leverage, so length becomes a cheap feature."]
+];
+Q.forEach(q=>{const c=q[1][q[2]]; const o=shuffle(q[1].slice()); q[1]=o; q[2]=o.indexOf(c);});
+shuffle(Q);
+let scr=0,ans=0; const qz=$('quiz');
+$('score').textContent=`Score: 0/0 answered (of ${Q.length})`;
+Q.forEach((q,i)=>{
+  const d=document.createElement('div'); d.className='q card';
+  const h=document.createElement('p'); h.innerHTML=`<b>Q${i+1}. ${q[0]}</b>`; d.appendChild(h);
+  const ex=document.createElement('div'); ex.className='exp';
+  const bs=[];
+  q[1].forEach((o,j)=>{
+    const b=document.createElement('button'); b.textContent=o; bs.push(b);
+    b.onclick=()=>{
+      if(d.dataset.done)return; d.dataset.done=1; ans++;
+      if(j===q[2]){b.className='ok'; scr++;}
+      else{b.className='bad'; bs[q[2]].className='ok';}
+      ex.textContent=(j===q[2]?'✓ Correct. ':'✗ Not quite. ')+q[3];
+      $('score').textContent=`Score: ${scr}/${ans} answered (of ${Q.length})`+(ans===Q.length?(scr>=Q.length-1?' · Excellent':' · Review the flashcards and §3–§4'):'');
+    };
+    d.appendChild(b);
+  });
+  d.appendChild(ex); qz.appendChild(d);
+});
+
+// ---- math rendering ----
+window.addEventListener('load',()=>{ if(window.renderMathInElement){ renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'\\(',right:'\\)',display:false}],throwOnError:false}); }});
+</script></body></html>
