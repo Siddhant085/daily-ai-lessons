@@ -1,6 +1,96 @@
 {
   "lessons": [
     {
+      "date": "2026-10-21",
+      "slug": "image-generators-gui-world-models",
+      "title": "Image generators as GUI world models: training agents on software that never ran",
+      "tags": [
+        "latest"
+      ],
+      "summary": "How AutoGUIWorld turns an image editor plus a planner into a GUI data engine: interaction fidelity, open-loop labels, defect propagation through history, MMD vs C2ST, and where synthetic trajectories belong in a CUA training stack.",
+      "minutes": 18,
+      "path": "lessons/2026-10-21-image-generators-gui-world-models.html",
+      "cards": [
+        {
+          "q": "Why can a pixel-only CUA policy learn from generated trajectories without the generator ever modeling the latent OS state?",
+          "choices": [
+            "Its learning signal depends on dynamics only through the marginal kernel P(o_{t+1} | h_t, a_t)",
+            "Screenshots always fully determine the OS state",
+            "SFT ignores observations",
+            "Image generators simulate the filesystem internally"
+          ],
+          "a": "Its learning signal depends on dynamics only through the marginal kernel P(o_{t+1} | h_t, a_t)",
+          "explanation": "The agent never reads s_t, so matching the latent-marginalized observation kernel (interaction fidelity) is sufficient in principle."
+        },
+        {
+          "q": "In a planner-first pipeline the editor fails to open a dialog, but the next planned label is 'type filename'. What does training on this instance teach?",
+          "choices": [
+            "To act as if the last action worked regardless of the screen",
+            "Good recovery behavior",
+            "Nothing, because the label is the expert's",
+            "Better grounding of the dialog"
+          ],
+          "a": "To act as if the last action worked regardless of the screen",
+          "explanation": "Labels are fixed before rendering (open-loop), so a missing effect creates an input/label mismatch that rewards ignoring visual feedback."
+        },
+        {
+          "q": "With a perfect defect detector, why does dropping only the flagged instance still leave contaminated training data?",
+          "choices": [
+            "The defective screenshot remains in the history of every later instance",
+            "The detector's recall is actually lower",
+            "Dropping changes the action distribution",
+            "It doesn't; contamination is zero"
+          ],
+          "a": "The defective screenshot remains in the history of every later instance",
+          "explanation": "History-conditioned instances inherit earlier screens. Truncating at the first flag (or regenerating from it) removes downstream contamination."
+        },
+        {
+          "q": "Synthetic-vs-real C2ST AUC is about 1, but so is real-vs-real, and the MMD ratio is about 1. What follows?",
+          "choices": [
+            "Every source has a detectable fingerprint; the gap is comparable to real cross-source variation, so next check whether fingerprints correlate with labels",
+            "The synthetic data is out of distribution and useless",
+            "MMD is miscomputed",
+            "C2ST should be ignored entirely"
+          ],
+          "a": "Every source has a detectable fingerprint; the gap is comparable to real cross-source variation, so next check whether fingerprints correlate with labels",
+          "explanation": "Classifiers detect any consistent difference. What hurts a policy is a label-conditional shortcut, not source detectability per se."
+        },
+        {
+          "q": "Why are grounding gains the most robust payoff of generated GUI data?",
+          "choices": [
+            "Each click label comes from a locator on the clean pre-action frame, independent of whether the next transition was rendered faithfully",
+            "Grounding benchmarks are easier",
+            "The generator renders bounding boxes directly",
+            "Grounding needs no history and no images"
+          ],
+          "a": "Each click label comes from a locator on the clean pre-action frame, independent of whether the next transition was rendered faithfully",
+          "explanation": "Transition defects corrupt downstream labels and histories, but a step's own (screen, target, point) triple doesn't depend on later rendering."
+        },
+        {
+          "q": "What's the main reason not to run online RL against a generated visual world model instead of an executable environment?",
+          "choices": [
+            "No ground-truth state or verifier exists, so the policy optimizes a learned judge and the generator's blind spots",
+            "Image models are too slow to render",
+            "RL requires text-only observations",
+            "Generators are deterministic, so there's no exploration"
+          ],
+          "a": "No ground-truth state or verifier exists, so the policy optimizes a learned judge and the generator's blind spots",
+          "explanation": "Optimization pressure finds reward errors. Use generated data for SFT and coverage, and do RL in real environments with programmatic checkers."
+        },
+        {
+          "q": "How could you get recovery (error-then-fix) supervision from a planner + image-editor pipeline?",
+          "choices": [
+            "Render the student's own, possibly wrong, actions and have the planner replan from the rendered screen (DAgger-style)",
+            "Generate 10x more planner trajectories",
+            "Increase checker recall",
+            "Use higher-resolution rendering"
+          ],
+          "a": "Render the student's own, possibly wrong, actions and have the planner replan from the rendered screen (DAgger-style)",
+          "explanation": "Planned trajectories never fail. Recovery data needs off-expert states labeled with corrective actions, which is DAgger's on-policy labeling, avoiding BC's T^2·epsilon compounding."
+        }
+      ]
+    },
+    {
       "date": "2026-10-18",
       "slug": "dpo-from-first-principles",
       "title": "DPO from first principles: Bradley–Terry, KL-regularized RL, and why the partition function cancels",

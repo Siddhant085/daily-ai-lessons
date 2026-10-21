@@ -1,0 +1,454 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Image generators as GUI world models: training agents on software that never ran</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<style>
+:root{--bg:#fafbfc;--fg:#1d2433;--muted:#667;--card:#fff;--line:#e3e7ee;--soft:#f3f5f9;--soft2:#f7f8fb;--code:#eef1f6;
+--blue:#4f7cff;--red:#d64545;--amber:#e0a100;--violet:#8a5cf6;--green:#3aa55b;
+--note:#f2f6ff;--warn:#fff9e8;--mine:#f6f2ff;--bad:#fdf2f2;--ok:#e3f7e8;--badbtn:#fde8e8;--ca:#3aa55b;--cb:#d64545;--cc:#8a5cf6}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1420;--fg:#e4e8f0;--muted:#9aa3b5;--card:#171d2b;--line:#2a3347;--soft:#1c2333;--soft2:#1a2030;--code:#232b3d;
+--note:#172340;--warn:#2d2614;--mine:#231b38;--bad:#341a1d;--ok:#163322;--badbtn:#3a1c1f;--ca:#52c474;--cb:#f06b6b;--cc:#a888ff}}
+body{font-family:Inter,system-ui,sans-serif;max-width:900px;margin:0 auto;padding:24px;color:var(--fg);line-height:1.6;background:var(--bg)}
+a{color:var(--blue)}
+h1{font-size:2rem;margin-bottom:4px;line-height:1.25}h2{border-bottom:2px solid var(--line);padding-bottom:4px;margin-top:40px}h3{margin-bottom:4px}
+code,.mono{font-family:'JetBrains Mono',monospace;font-size:.9em;background:var(--code);padding:1px 4px;border-radius:4px}
+pre{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;font-size:.82em;line-height:1.5}
+pre code{background:none;padding:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 20px;margin:16px 0}
+.note{border-left:4px solid var(--blue);background:var(--note)}.warn{border-left:4px solid var(--amber);background:var(--warn)}.mine{border-left:4px solid var(--violet);background:var(--mine)}.badbox{border-left:4px solid var(--red);background:var(--bad)}
+table{border-collapse:collapse;width:100%;font-size:.9em}td,th{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}th{background:var(--soft)}
+.tablewrap{overflow-x:auto}
+.ctl{display:flex;gap:14px 20px;flex-wrap:wrap;margin:10px 0;align-items:center}
+.ctl label{font-size:.9em}input[type=range]{vertical-align:middle;width:150px}
+select{font:inherit;font-size:.9em;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 6px}
+.q{margin:14px 0}.q button{display:block;margin:5px 0;text-align:left;width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);cursor:pointer;font:inherit}
+.q button:hover{border-color:var(--blue)}
+.q button.ok{background:var(--ok);border-color:var(--green)}.q button.bad{background:var(--badbtn);border-color:var(--red)}.exp{font-size:.92em;color:var(--fg);opacity:.9;margin-top:6px}
+details{background:var(--soft2);border:1px dashed var(--line);border-radius:8px;padding:8px 12px;margin:10px 0}summary{cursor:pointer;font-weight:600}
+.btn{padding:7px 12px;border-radius:8px;border:1px solid var(--blue);background:var(--blue);color:#fff;font:inherit;font-size:.88em;cursor:pointer}.btn.sec{background:transparent;color:var(--blue)}
+.pill{display:inline-block;font-size:.78em;padding:1px 8px;border-radius:999px;background:var(--code);margin-right:4px}
+.eq{background:var(--soft);padding:10px 14px;border-radius:8px;overflow-x:auto;margin:10px 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.grid2>div{background:var(--soft2);border-radius:8px;padding:10px;font-size:.92em}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.grid3>div{background:var(--soft2);border-radius:8px;padding:10px;font-size:.88em}
+@media(max-width:700px){.grid2,.grid3{grid-template-columns:1fr}body{padding:14px}}
+.obj li{margin:4px 0}
+.flip{perspective:900px;cursor:pointer;margin:10px 0}
+.flip-inner{position:relative;width:100%;min-height:150px;transition:transform .45s;transform-style:preserve-3d}
+.flip.on .flip-inner{transform:rotateY(180deg)}
+.flip-f,.flip-b{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--card);overflow:auto}
+.flip-b{transform:rotateY(180deg);background:var(--note);border-color:var(--blue)}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.85em;margin:6px 0}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:middle}
+svg text{fill:var(--fg)}
+.small{font-size:.88em;color:var(--muted)}
+.readout{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin:10px 0}
+.readout div{background:var(--soft2);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:.88em}
+.readout b{font-family:'JetBrains Mono',monospace}
+</style></head>
+<body><nav id="dal-nav" style="position:sticky;top:0;z-index:9999;display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;background:#111827;font:600 15px/1.2 system-ui,sans-serif"><a href="../" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">← Home</a><a href="../archive.html" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">Archive</a><a href="../review.html" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">Review</a></nav>
+<p class="small"><span class="pill">latest</span><span class="pill">world models</span><span class="pill">synthetic data</span><span class="pill">~18 min</span> · Daily AI Tutor · Oct 21, 2026</p>
+<h1>Image generators as GUI world models: training agents on software that never ran</h1>
+<p class="small">Based on <a href="https://arxiv.org/abs/2610.01215">AutoGUIWorld (arXiv:2610.01215)</a>, with callbacks to <a href="https://siddhant085.github.io/daily-ai-lessons/lessons/2026-10-15-latent-world-action-gui.html">latent world action models</a>, <a href="https://siddhant085.github.io/daily-ai-lessons/lessons/2026-10-11-screen-grounding.html">screen grounding</a>, and <a href="https://siddhant085.github.io/daily-ai-lessons/lessons/2026-10-14-credit-assignment-process-rewards.html">credit assignment</a>.</p>
+
+<div class="card note">
+<h3>Learning objectives</h3>
+<ol class="obj">
+<li>Write down the observation-level transition kernel a screenshot agent actually learns from, and explain why it lets you skip simulating the latent OS state.</li>
+<li>Explain the planner / renderer split (what should happen vs. how it looks) and why it makes action labels <i>open-loop</i>.</li>
+<li>Reason quantitatively about how per-transition rendering defects propagate through history-conditioned training instances, and which filtering policy actually removes them.</li>
+<li>Read MMD and classifier two-sample test (C2ST) results correctly: why "a classifier can tell them apart" and "the distributions are close" are both true.</li>
+<li>Decide where generated trajectories belong in a CUA training stack (grounding, SFT cold start, RL) and where they don't.</li>
+</ol>
+</div>
+
+<div class="card mine">
+<h3>Hook</h3>
+<p>You want your agent to work in ChimeraX, KiCad, or a licensed CAD tool. Standing up each one in a resettable VM, writing task setups, and recording demos costs weeks per app. Here's the provocative alternative: <b>never install the software</b>. Ask an image-editing model to paint the screen, have a planner say what each click should do, and have the image model paint the result. Is that data, or is it a hallucination with coordinates attached? The answer depends on a precise question: <i>which conditional distribution does your policy learn from, and which parts of it does the generator get right?</i></p>
+</div>
+
+<h2>1. What a screenshot agent actually consumes</h2>
+<p>Model the computer as a POMDP with latent state \(s_t\) (filesystem, app internals, DOM, focus), host dynamics \(T(s_{t+1}\mid s_t,a_t)\), and rendering \(O(o_t\mid s_t)\). A pixel-only policy conditions on the instruction \(g\) and history \(h_t=(o_0,a_0,\dots,o_t)\):</p>
+<div class="eq">$$\pi_\theta(a_t \mid g, h_t)$$</div>
+<p>History matters because single screenshots aren't Markov (scroll offsets, dialog stacks, half-typed text). Now the key move. The agent never touches \(s\), so everything it can learn about dynamics is contained in the <b>observation-level kernel</b> you get by marginalizing the latent state against its posterior given history:</p>
+<div class="eq">$$P(o_{t+1}\mid h_t,a_t)=\sum_{s_t,s_{t+1}} b(s_t\mid h_t)\,T(s_{t+1}\mid s_t,a_t)\,O(o_{t+1}\mid s_{t+1})$$</div>
+<p>The paper calls faithfulness to this kernel <b>interaction fidelity</b>. If a generator samples \(o_{t+1}\) from (approximately) this distribution, a screenshot policy can't tell, in principle, that no OS was ever running. You don't need to reconstruct \(s\); you need the pixels to be right <i>conditioned on the history</i>.</p>
+<p>The trajectory distribution then factors as</p>
+<div class="eq">$$p(\tau)=p(g,o_0)\prod_{t=0}^{T-1}\pi^{\star}(a_t\mid g,h_t)\,P(o_{t+1}\mid h_t,a_t)$$</div>
+<p>and a data engine has to supply three things: a plausible \((g,o_0)\), a competent "expert" \(\pi^\star\), and a transition model. AutoGUIWorld assigns them to three different components.</p>
+
+<div class="card warn"><b>Callback (Oct 15).</b> The latent world action lesson trained a model to <i>predict</i> transitions so the agent could plan. Here the world model is used offline as a <i>data source</i>, and nobody trains it. Same object (\(P(o'\mid h,a)\)), different job: a planning model gets judged on decision quality, a data generator on what the student learns from its samples.</div>
+
+<div id="cc1" class="card q"></div>
+
+<h2>2. The pipeline: planner says <i>what</i>, renderer says <i>how it looks</i></h2>
+<p>Step through the engine. Each stage lists what it conditions on and the failure it introduces.</p>
+<div class="card">
+<svg id="pipe" viewBox="0 0 860 150" width="100%" role="img" aria-label="AutoGUIWorld pipeline"></svg>
+<div class="ctl"><button class="btn sec" id="pprev">◀ Prev</button><button class="btn" id="pnext">Next ▶</button><span class="small" id="pstep"></span></div>
+<div id="pdesc" class="card" style="margin:0"></div>
+</div>
+<p>Formally, the planner emits the whole action sequence and intended visual deltas <i>before any pixel is rendered</i>:</p>
+<div class="eq">$$(a_{0:T-1},\ \delta_{0:T-1}) \sim \text{Planner}(g, c),\qquad p_t=\text{Voyager}(o_t, a_t, \delta_t, \text{ctx}_t),\qquad o_{t+1}\sim G(o_t, p_t)$$</div>
+<p>where \(c\) is the structured seed context (OS, style, initial scene) and \(G\) is an image-to-image editor (the paper uses "Image2", gpt-image-2). Pointing actions then get coordinates from an open-vocabulary locator on the <i>clean</i> pre-action frame (box center as the click label), and each step becomes an SFT instance \((g, h_t) \mapsto (a_t,\ \text{point})\).</p>
+
+<h3>The consequence nobody puts in the abstract: labels are open-loop</h3>
+<p>Because \(a_{0:T-1}\) is fixed up front, the action label at step \(t+1\) does <b>not depend</b> on what \(G\) actually rendered at \(o_{t+1}\). In a real environment, the expert's next action is a function of the screen it sees. Here, it's a function of the screen the planner <i>assumed</i> it would see. When the render matches the plan, these coincide. When it doesn't, you get an instance whose input shows effect X and whose label assumes effect Y. Train on enough of those and you teach the policy that the screen is optional: act as if the last action worked. That's the opposite of the closed-loop verification habit you want in a CUA.</p>
+<p>Two further structural facts follow from the planner owning the logic:</p>
+<div class="grid2">
+<div><b>No failures, no recovery.</b> The planner resolves preconditions first and the renderer realizes the plan, so trajectories almost never contain an error followed by a fix. The paper's own stats report precondition/blocker fields at zero and near-0% rollout failure. Great for clean imitation; useless for teaching "the dialog didn't open, try again."</div>
+<div><b>No verifier, no reward.</b> There is no underlying state to check, so "success" is whatever the planner declared. You can't run RL against \(G\) without a learned judge, and a learned judge on generated pixels is exactly the reward-hacking surface you'd fear.</div>
+</div>
+
+<div class="card warn"><b>Callback (imitation learning theory).</b> Pure behavior cloning on expert states has the classic compounding-error problem: Ross, Gordon &amp; Bagnell show a policy with per-step error \(\epsilon\) on the expert's state distribution can incur cost up to \(J(\pi^\star)+T^2\epsilon\). Recovery-free synthetic data is the purest form of expert-state-only data, so it inherits that quadratic horizon penalty. DAgger's fix needs the expert to label states <i>the learner</i> visits, which a planner + renderer could do in principle: render the learner's (wrong) action and ask the planner to replan.</div>
+
+<div id="cc2" class="card q"></div>
+
+<h2>3. How rendering defects propagate (simulate it)</h2>
+<p>The paper's VLM audit flags a few percent of desktop transitions as action–image inconsistent, concentrated in typing, dragging, scrolling, and keyboard actions (invented document content, substituted commands, missing effects, unintended edits to persistent content). A few percent sounds harmless. But instances are <b>history-conditioned</b>, so one bad transition at step \(s\) poisons the <i>input</i> of every later instance in that trajectory, either directly (instance \(s{+}1\) sees the wrong screen) or through history.</p>
+<p>Model: transition \(t\to t{+}1\) is defective with probability \(\epsilon_t=\min(1,\epsilon(1+\gamma t))\) (\(\gamma\) models drift accumulating over long edits). A checker flags defective transitions with recall \(r\) and clean ones with false-positive rate \(f\). Compare three filtering policies.</p>
+<div class="card">
+<div class="ctl">
+<label>per-transition defect ε <input type="range" id="eps" min="0" max="0.15" step="0.005" value="0.03"> <b id="epsv"></b></label>
+<label>drift γ <input type="range" id="gam" min="0" max="0.3" step="0.01" value="0"> <b id="gamv"></b></label>
+<label>length T <input type="range" id="T" min="2" max="40" step="1" value="12"> <b id="Tv"></b></label>
+<label>checker recall r <input type="range" id="rec" min="0" max="1" step="0.05" value="0.7"> <b id="recv"></b></label>
+<label>false-positive f <input type="range" id="fp" min="0" max="0.2" step="0.01" value="0.02"> <b id="fpv"></b></label>
+<label>policy <select id="pol"><option value="drop">drop flagged instance only</option><option value="trunc">truncate at first flag</option><option value="whole">drop whole trajectory on any flag</option></select></label>
+</div>
+<div class="legend"><span><i style="background:var(--ca)"></i>kept, fully clean</span><span><i style="background:var(--amber)"></i>kept, defect in history only</span><span><i style="background:var(--cb)"></i>kept, current screen is defective</span><span><i style="background:var(--line)"></i>discarded</span></div>
+<svg id="propplot" viewBox="0 0 860 260" width="100%"></svg>
+<div class="readout" id="ro2"></div>
+<p class="small">Toy model with independent defects; instance \(t\) uses screenshot \(o_t\) and history \(o_{0:t-1}\); the seed \(o_0\) is assumed clean. "Drop flagged instance only" removes the instance whose current screen came from a flagged transition but leaves that screen in later histories.</p>
+</div>
+<details><summary>Things to try</summary>
+<ul>
+<li>Default settings, policy "drop flagged instance only": look at the amber band growing with \(t\). The step-level defect rate is small, yet late instances are often trained on a corrupted history.</li>
+<li>Switch to "truncate at first flag". Amber shrinks to what the checker <i>missed</i>; you pay in yield at late steps. This is the right default for history-conditioned SFT.</li>
+<li>Set γ = 0.2 and T = 30. Drift makes late steps both rarer (after filtering) and dirtier. Long-horizon generated data is systematically under-represented, which is exactly where CUAs are weakest (see the <a href="https://siddhant085.github.io/daily-ai-lessons/lessons/2026-10-13-osworld2-long-horizon.html">OSWorld 2.0 lesson</a>).</li>
+<li>Push recall to 1 and f to 0.15 with "whole trajectory". Yield collapses for long T even with a perfect detector: false positives compound as \((1-f)^{T-1}\).</li>
+</ul></details>
+
+<div class="eq">$$\Pr[\text{instance } t \text{ has clean history}] = \prod_{s<t-1}(1-\epsilon_s)\quad(\text{drop policy}),\qquad \Pr[\text{kept, history dirty}]=\prod_{s<t}(a_s+b_s)-\prod_{s<t}a_s\quad(\text{truncate})$$</div>
+<p class="small">with \(a_s=(1-\epsilon_s)(1-f)\) (clean, unflagged) and \(b_s=\epsilon_s(1-r)\) (defective, missed).</p>
+
+<div id="cc3" class="card q"></div>
+
+<h2>4. Is generated data "in distribution"? MMD vs. C2ST</h2>
+<p>The paper measures alignment in the feature space the policy actually uses: the Qwen vision tower's merged tokens, mean-pooled per image. Two tools:</p>
+<div class="grid2">
+<div><b>MMD</b> (Gretton et al.): with kernel \(k\),
+$$\mathrm{MMD}^2 = \mathbb{E}[k(x,x')] + \mathbb{E}[k(y,y')] - 2\,\mathbb{E}[k(x,y)]$$
+An RBF kernel with one bandwidth from the median heuristic measures differences <i>at the scale of typical inter-sample distances</i>. The paper normalizes synthetic–real MMD by the real–real MMD between independently collected datasets, so 1.0 means "as different as two real datasets are from each other."</div>
+<div><b>C2ST</b> (Lopez-Paz &amp; Oquab): train a classifier to tell source A from source B; held-out AUC ≈ 0.5 means indistinguishable. A flexible classifier rescales features freely, so it can latch onto a tiny, consistent fingerprint (a texture statistic, a JPEG artifact) that MMD at the median bandwidth barely registers.</div>
+</div>
+<p>The paper's finding has exactly this shape: synthetic-vs-real C2ST AUC is near 1, but real-vs-real is also near 1. Every collection pipeline has a signature, and the MMD ratio sits at roughly the real cross-source scale. Content-matched text and icon patches fall near chance. Play with the toy below to see how the two metrics come apart.</p>
+<div class="card">
+<div class="ctl">
+<label>content shift <input type="range" id="sh" min="0" max="2" step="0.05" value="0.3"> <b id="shv"></b></label>
+<label>spread ratio <input type="range" id="sc" min="0.5" max="2" step="0.05" value="1"> <b id="scv"></b></label>
+<label>fingerprint (tiny-variance dim) <input type="range" id="fpr" min="0" max="0.3" step="0.01" value="0.1"> <b id="fprv"></b></label>
+<button class="btn sec" id="resamp">resample</button>
+</div>
+<svg id="mmdplot" viewBox="0 0 860 280" width="100%"></svg>
+<div class="readout" id="ro3"></div>
+<p class="small">Toy: 200 points per source in 3-D. Dims 1–2 are "content" (std 1). Dim 3 has std 0.03, and source B is offset by the fingerprint value, like a generator's texture signature. MMD uses an RBF kernel with the median-heuristic bandwidth on raw features. C2ST is logistic regression on standardized features plus squares, AUC on a held-out half. Plot shows dims 1–2 only, so the fingerprint is invisible to your eye too.</p>
+</div>
+<div class="card note"><b>Take-home.</b> A high C2ST AUC means a fingerprint <i>exists</i>. It doesn't tell you the fingerprint is large in the directions your policy relies on. The worrying case is a fingerprint that correlates with the <i>label</i>, for example generated "after" screens always looking a bit cleaner than "before" screens. Then the policy can learn a shortcut that doesn't exist in real software. Detectability is a source-level property; shortcut risk is a label-conditional one.</div>
+
+<h2>5. What transferred, and what didn't</h2>
+<p>Fine-tuning Qwen3.5-35B-A3B on ~79k generated step instances, the paper reports gains on all four interactive benchmarks it ran (OSWorld, Windows Agent Arena, macOSWorld, ScienceBoard) and a large jump in ScreenSpot-Pro grounding. It also reports beating a same-base run trained on ~350k real AgentNet demonstrations, though the authors note the two runs used different inference settings. Two details are more instructive than the headline numbers:</p>
+<ul>
+<li><b>Grounding moved most, especially text targets.</b> That fits the mechanism. Every generated step carries a (screen, element description, point) triple from an independent locator, so grounding supervision is dense, diverse, and doesn't depend on transition fidelity at all. Icons improved less. One plausible reason, which the paper does not test, is that small icons are harder for an image editor to paint faithfully than text.</li>
+<li><b>Chrome regressed</b> on both OSWorld and WAA while most other domains improved. The paper reports this without, as far as I read, a definitive explanation. A hypothesis to hold loosely: web pages have the richest real-world dynamics (async loads, layout reflow, redirects), which an open-loop "edit the screenshot" model represents worst, and Chrome is also the largest slice of the generated set, so any systematic bias there gets the most weight.</li>
+</ul>
+
+<div class="card badbox">
+<h3>Common misconceptions</h3>
+<ul>
+<li><b>"High visual realism means high-quality trajectories."</b> Realism is a property of \(p(o)\); trajectories need \(P(o_{t+1}\mid h_t,a_t)\). A photorealistic screen where the typed text silently changed is worse than an ugly but faithful one.</li>
+<li><b>"A 2–3% defect rate is negligible."</b> Per transition, maybe. With history conditioning, the share of instances with a corrupted history grows roughly like \(1-(1-\epsilon)^t\).</li>
+<li><b>"C2ST AUC ≈ 1 proves the synthetic data is out of distribution."</b> Real datasets are mutually separable too. Ask whether the separating features matter for the task.</li>
+<li><b>"A generated world model can replace the environment for RL."</b> There's no ground-truth state and no verifier, and the policy would be optimizing against the generator's blind spots. Use it for SFT and grounding, and do RL in executable environments.</li>
+<li><b>"Planner-generated data is like human demos."</b> Human demos contain hesitations, mistakes, and recoveries, all conditioned on what was really on screen. Planned data is open-loop and error-free by construction.</li>
+</ul></div>
+
+<h2>6. How this applies to computer-use agents</h2>
+<div class="grid3">
+<div><b>Use it for coverage of the long tail.</b> Professional and licensed apps you can't deploy at scale are where generated screens pay off most: grounding in dense, unfamiliar layouts, and knowing which panel holds which control.</div>
+<div><b>Use it as an SFT cold start, then RL for real.</b> The <a href="https://siddhant085.github.io/daily-ai-lessons/lessons/2026-10-17-step-balanced-gspo-hybrid-cua.html">OS-Helix recipe</a> (SFT, then online RL in live desktops) is the natural home: generated data widens the prior, and real rollouts with verifiers fix the closed-loop behavior.</div>
+<div><b>Close the loop cheaply.</b> Make data closed-loop: render the <i>student's</i> action (including wrong ones), let the planner replan from the rendered screen, and keep the recovery. That gives you DAgger-style corrections and recovery demos without an OS.</div>
+</div>
+<div class="card">
+<h3>Design checklist for your own generated-trajectory pipeline</h3>
+<ol>
+<li>Condition the next action label on the <b>rendered</b> screen (replan or re-verify each step), not only on the plan.</li>
+<li>Filter with <b>truncate-at-first-flag</b> for history-conditioned instances; keep the clean prefix.</li>
+<li>Audit by action type. Text entry, drag, scroll, and hotkeys are where the editor deviates most; weight QC effort there.</li>
+<li>Run a <b>label-conditional</b> shortcut probe: can a classifier predict the action from generator fingerprints alone (for example, from the difference image's texture)? If yes, you've built a shortcut.</li>
+<li>Track per-domain regressions. A gain in the mean can hide a domain where the generator's dynamics are systematically wrong.</li>
+</ol></div>
+
+<h2>7. Final quiz</h2>
+<p class="small">Options are shuffled each load. Score updates as you answer.</p>
+<div id="quiz"></div>
+<div class="card"><b>Score: <span id="score">0</span> / <span id="qtotal">0</span></b> <button class="btn sec" id="qreset">Reset quiz</button></div>
+
+<h2>Summary</h2>
+<p>A screenshot-only agent learns dynamics solely through the observation-level kernel \(P(o_{t+1}\mid h_t,a_t)\), so a generator that samples that kernel faithfully can replace the OS as a data source without modeling latent state. AutoGUIWorld splits the job: a planner fixes the task logic and action sequence up front, an image editor renders each next screen, and an independent locator supplies click coordinates. That makes grounding supervision cheap and plentiful, and it transferred to real benchmarks. But the split has structural costs. Labels are open-loop with respect to what was rendered, trajectories contain no failures or recoveries, there's no verifier for RL, and per-transition defects contaminate every later history-conditioned instance unless you truncate. Distribution checks need care too: classifiers detect source fingerprints everywhere, including between real datasets, so the right question is whether the fingerprint correlates with labels. Best use in a CUA stack: long-tail coverage and grounding for SFT cold start, followed by closed-loop RL in executable environments.</p>
+
+<h2>Flashcards</h2>
+<p class="small">Click a card to flip.</p>
+<div id="cards" class="grid2"></div>
+
+<h2>Sources</h2>
+<ul>
+<li>Hunyuan AI Data Team. <a href="https://arxiv.org/abs/2610.01215">AutoGUIWorld: Image Generators as Visual World Models for GUI Agent</a>. arXiv:2610.01215 (2026). Formulation (interaction fidelity, factorization), pipeline, MMD/C2ST analysis, audit of action–image inconsistencies, and benchmark results.</li>
+<li>Gretton et al. <a href="https://jmlr.org/papers/v13/gretton12a.html">A Kernel Two-Sample Test</a>. JMLR 13 (2012). Definition of MMD.</li>
+<li>Lopez-Paz &amp; Oquab. <a href="https://arxiv.org/abs/1610.06545">Revisiting Classifier Two-Sample Tests</a>. arXiv:1610.06545 (ICLR 2017). C2ST.</li>
+<li>Ross, Gordon &amp; Bagnell. <a href="https://arxiv.org/abs/1011.0686">A Reduction of Imitation Learning and Structured Prediction to No-Regret Online Learning</a> (DAgger). AISTATS 2011. The \(T^2\epsilon\) behavior-cloning bound and the on-policy labeling fix.</li>
+<li>Related reading in the same month: <a href="https://arxiv.org/abs/2610.12611">SoftwareGym</a> (synthesizing <i>executable</i> apps instead of pixels) and <a href="https://arxiv.org/abs/2610.22234">OS-Helix</a> (SFT, then online RL in live desktops).</li>
+</ul>
+<p class="small">Toy simulations on this page are illustrative models, not reproductions of the paper's experiments.</p>
+<script>
+const $=id=>document.getElementById(id);
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim()||'#888';}
+let score=0, answered=0;
+function mountMC(el, question, choices, correctIdx, explain, isQuiz){
+  const wrap=document.createElement('div'); wrap.className='q';
+  const qq=document.createElement('p'); qq.innerHTML='<b>'+question+'</b>'; wrap.appendChild(qq);
+  const exp=document.createElement('div'); exp.className='exp';
+  const btns=[];
+  shuffle(choices.map((c,i)=>({c,i}))).forEach(({c,i})=>{
+    const b=document.createElement('button'); b.innerHTML=c; btns.push({b,i});
+    b.onclick=()=>{
+      if(wrap.dataset.done)return; wrap.dataset.done=1;
+      const ok=i===correctIdx;
+      if(ok){b.className='ok'; exp.innerHTML='✓ Correct. '+explain;}
+      else{b.className='bad'; btns.forEach(o=>{if(o.i===correctIdx)o.b.className='ok';}); exp.innerHTML='✗ Not quite. '+explain;}
+      if(isQuiz){answered++; if(ok)score++; $('score').textContent=score;}
+    };
+    wrap.appendChild(b);
+  });
+  wrap.appendChild(exp); el.appendChild(wrap);
+}
+// ---------- concept checks ----------
+mountMC($('cc1'),'A generator produces next screenshots that are pixel-perfect samples of P(o′ | o_t, a_t), conditioning only on the current screen, not the full history. When is that still a faithful data source for a history-conditioned policy?',
+ ['Only when the current screenshot is a sufficient statistic of history for predicting the next screen; it fails for things like scroll offsets, undo stacks, or text typed off-screen',
+  'Always, because the policy conditions on history anyway and can fill in the gaps',
+  'Never, because the generator must reconstruct the latent OS state s_t',
+  'Only if the image model is larger than the policy'],0,
+ 'Interaction fidelity is defined against P(o_{t+1} | h_t, a_t). Dropping history is exact only if o_t is Markov for the next observation, which GUIs routinely violate. This is why the rollout context (plan, completed steps) is passed to the prompt writer.');
+mountMC($('cc2'),'The planner intended "click Save As → a dialog opens". The editor renders the document unchanged (no dialog). The next planned label is "type report.pdf". What does this training instance teach if it isn\'t filtered?',
+ ['To type a filename even though no dialog is visible, i.e., to trust the plan over the screen',
+  'Nothing harmful, since the label is still the expert\'s correct action',
+  'To retry clicking Save As, which is good recovery behavior',
+  'To ground the click on Save As more precisely'],0,
+ 'Labels are fixed before rendering, so a missing effect creates an input/label mismatch. The policy learns that action effects can be assumed, which is the opposite of closed-loop behavior. A real expert would have retried.');
+mountMC($('cc3'),'Using the drop-flagged-instance policy with a perfect checker (r = 1, f = 0), what fraction of kept instances still have a defective screenshot somewhere in their history?',
+ ['Generally nonzero and growing with t: the flagged screen is removed as a target but still sits in later instances\' histories',
+  'Exactly zero, since the checker catches every defect',
+  'Exactly ε, independent of t',
+  'Zero for instances after the defect, nonzero before it'],0,
+ 'Removing an instance doesn\'t remove its screenshot from the history of later steps. With a perfect detector you should truncate (or regenerate from the flagged step) to get zero contamination.');
+
+// ---------- pipeline stepper ----------
+const STAGES=[
+ ['World sampler','Structured spec: OS substrate (platform, geometry, action space), appearance (theme, palette, typography), initial GUI state (windows, layout, content).','Controllable diversity; the spec is reused by every later stage so the task and plan agree with the screen.','Coverage is only as broad as the spec space. Rare widgets you never put in the spec won\'t appear.'],
+ ['Seed render','Image2 renders the compiled description into o₀ and stores it with its metadata.','Provides the root frame that all later edits preserve.','A seed that misrenders a control propagates through the whole trajectory.'],
+ ['Task generator','Conditions on the seed\'s visible elements and platform, producing instruction g.','Avoids tasks referring to absent apps or hidden windows (task-after-seed ordering).','Tasks are limited to what\'s visible or plausibly reachable from the seed.'],
+ ['Meta planner','From (g, c) emits a₀..a_{T−1}, intended deltas δₜ, and target descriptions, resolving dependencies up front.','Owns task logic: order, preconditions, multi-app dependencies.','Labels are open-loop. There are no failures or recoveries, and success is declared, not verified.'],
+ ['Voyager + Image2','Voyager writes a rendering prompt pₜ from (oₜ, aₜ, δₜ, plan context); Image2 edits oₜ into oₜ₊₁.','The image prior supplies realistic look and layout preservation.','Missing effects, invented content, persistent-content mutation, and drift over long edits.'],
+ ['Grounding + QC','A locator maps the target description to a box on the clean pre-action frame (center = click label); a VLM checker repairs or drops bad steps.','Dense spatial supervision for free.','Locator errors become label noise; the checker has finite recall and false positives (see §3).']];
+let ps=0;
+function drawPipe(){
+  const W=860,n=STAGES.length,bw=122,gap=(W-n*bw)/(n+1);
+  const bl=css('--blue'),line=css('--line'),soft=css('--soft'),card=css('--card');
+  let g='';
+  STAGES.forEach((s,i)=>{const x=gap+i*(bw+gap),on=i===ps;
+    g+=`<rect x="${x}" y="40" width="${bw}" height="62" rx="10" fill="${on?bl:card}" stroke="${on?bl:line}" stroke-width="2"/>`;
+    g+=`<text x="${x+bw/2}" y="76" font-size="12.5" text-anchor="middle" ${on?'style="fill:#fff;font-weight:700"':''}>${s[0]}</text>`;
+    if(i<n-1) g+=`<path d="M${x+bw+3},71 L${x+bw+gap-5},71" stroke="${line}" stroke-width="2" marker-end="url(#ar)"/>`;});
+  const x4=gap+4*(bw+gap);
+  g+=`<path d="M${x4+bw*0.75},102 C${x4+bw*0.75},135 ${x4+bw*0.25},135 ${x4+bw*0.25},106" fill="none" stroke="${css('--amber')}" stroke-width="2" marker-end="url(#ar)"/><text x="${x4+bw/2}" y="146" font-size="10.5" text-anchor="middle">loop t → t+1</text>`;
+  $('pipe').innerHTML=`<defs><marker id="ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="${line}"/></marker></defs>`+g;
+  const s=STAGES[ps];
+  $('pdesc').innerHTML=`<b>${s[0]}</b><p><b>Conditions on / does:</b> ${s[1]}</p><p><b>Buys you:</b> ${s[2]}</p><p><b>Failure it introduces:</b> ${s[3]}</p>`;
+  $('pstep').textContent=`Stage ${ps+1} of ${n}`;
+}
+$('pnext').onclick=()=>{ps=(ps+1)%STAGES.length;drawPipe();};
+$('pprev').onclick=()=>{ps=(ps+STAGES.length-1)%STAGES.length;drawPipe();};
+
+// ---------- propagation simulator ----------
+function prop(){
+  const e=+$('eps').value,gm=+$('gam').value,T=+$('T').value,r=+$('rec').value,f=+$('fp').value,pol=$('pol').value;
+  $('epsv').textContent=e.toFixed(3);$('gamv').textContent=gm.toFixed(2);$('Tv').textContent=T;$('recv').textContent=r.toFixed(2);$('fpv').textContent=f.toFixed(2);
+  // transitions s=0..T-2 (o_s -> o_{s+1}); instances t=0..T-1 use o_t, history o_0..o_{t-1}
+  const E=[];for(let s=0;s<T-1;s++)E.push(Math.min(1,e*(1+gm*s)));
+  const a=E.map(x=>(1-x)*(1-f)), b=E.map(x=>x*(1-r));
+  const rows=[];
+  let allUnflag=1; for(let s=0;s<T-1;s++) allUnflag*=(a[s]+b[s]);
+  let allClean=1; for(let s=0;s<T-1;s++) allClean*=a[s];
+  for(let t=0;t<T;t++){
+    let clean=0,hist=0,cur=0;
+    if(t===0){
+      if(pol==='whole'){ // kept iff all unflagged; clean history trivially; current is seed (clean)
+        clean=allUnflag;
+      } else clean=1;
+    } else {
+      const k=t-1; // transition producing o_t
+      if(pol==='drop'){
+        let pc=1; for(let s=0;s<k;s++) pc*=(1-E[s]); // history o_1..o_{t-1} clean
+        // current transition unflagged: clean & unflagged a_k, defective & missed b_k
+        clean=pc*a[k]; cur=b[k]; hist=(1-pc)*a[k];
+      } else if(pol==='trunc'){
+        let pu=1,pa=1; for(let s=0;s<k;s++){pu*=(a[s]+b[s]);pa*=a[s];}
+        clean=pa*a[k]; hist=(pu-pa)*a[k]; cur=pu*b[k];
+      } else { // whole: kept iff all T-1 transitions unflagged
+        let pa=1; for(let s=0;s<k;s++) pa*=a[s];
+        let rest=1; for(let s=k+1;s<T-1;s++) rest*=(a[s]+b[s]);
+        let pu=1; for(let s=0;s<k;s++) pu*=(a[s]+b[s]);
+        clean=pa*a[k]*rest; hist=(pu-pa)*a[k]*rest; cur=pu*b[k]*rest;
+      }
+    }
+    rows.push({clean,hist,cur,disc:Math.max(0,1-clean-hist-cur)});
+  }
+  const W=860,H=260,x0=50,x1=840,y0=225,y1=15,bw=(x1-x0)/T;
+  const cs={clean:css('--ca'),hist:css('--amber'),cur:css('--cb'),disc:css('--line')};
+  let g=`<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y0}" stroke="${css('--line')}"/>`;
+  [0,0.5,1].forEach(v=>g+=`<text x="${x0-6}" y="${y0-(y0-y1)*v+4}" font-size="10" text-anchor="end">${v}</text>`);
+  rows.forEach((R,t)=>{let y=y0;['clean','hist','cur','disc'].forEach(k=>{const h=(y0-y1)*R[k];g+=`<rect x="${x0+t*bw+1}" y="${y-h}" width="${Math.max(1,bw-2)}" height="${h}" fill="${cs[k]}"/>`;y-=h;});
+    if(T<=20||t%5===0) g+=`<text x="${x0+t*bw+bw/2}" y="${y0+14}" font-size="10" text-anchor="middle">${t}</text>`;});
+  g+=`<text x="${x1}" y="${y0+30}" font-size="11" text-anchor="end">instance index t (probability mass per instance)</text>`;
+  $('propplot').innerHTML=g;
+  const sum=k=>rows.reduce((z,R)=>z+R[k],0), kept=sum('clean')+sum('hist')+sum('cur');
+  $('ro2').innerHTML=`<div>expected yield: <b>${(100*kept/T).toFixed(1)}%</b> of instances</div><div>kept & fully clean: <b>${kept?(100*sum('clean')/kept).toFixed(1):'0'}%</b></div><div>kept, history-only defect: <b>${kept?(100*sum('hist')/kept).toFixed(1):'0'}%</b></div><div>kept, current screen defective: <b>${kept?(100*sum('cur')/kept).toFixed(1):'0'}%</b></div><div>P(whole trajectory clean): <b>${(100*E.reduce((z,x)=>z*(1-x),1)).toFixed(1)}%</b></div>`;
+}
+['eps','gam','T','rec','fp','pol'].forEach(id=>$(id).addEventListener('input',prop));
+
+// ---------- MMD vs C2ST toy ----------
+let seed=7; function rnd(){seed=(seed*1664525+1013904223)%4294967296;return seed/4294967296;}
+function gauss(){let u=0,v=0;while(u===0)u=rnd();v=rnd();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+let base=null;
+function sampleBase(){base={A:[],B:[]};for(let i=0;i<200;i++){base.A.push([gauss(),gauss(),gauss()]);base.B.push([gauss(),gauss(),gauss()]);}}
+function mmd2(X,Y){
+  const all=X.concat(Y),d=[];
+  for(let i=0;i<all.length;i+=3)for(let j=i+3;j<all.length;j+=7){d.push(dist2(all[i],all[j]));}
+  d.sort((p,q)=>p-q); const med=d[Math.floor(d.length/2)]||1, s2=med; // median heuristic on squared dists
+  const k=(p,q)=>Math.exp(-dist2(p,q)/(2*s2*0.5));
+  let xx=0,yy=0,xy=0,n=X.length,m=Y.length;
+  for(let i=0;i<n;i++)for(let j=0;j<n;j++)if(i!==j)xx+=k(X[i],X[j]);
+  for(let i=0;i<m;i++)for(let j=0;j<m;j++)if(i!==j)yy+=k(Y[i],Y[j]);
+  for(let i=0;i<n;i++)for(let j=0;j<m;j++)xy+=k(X[i],Y[j]);
+  return xx/(n*(n-1))+yy/(m*(m-1))-2*xy/(n*m);
+}
+function dist2(p,q){let s=0;for(let i=0;i<p.length;i++)s+=(p[i]-q[i])**2;return s;}
+function feats(p){return [p[0],p[1],p[2],p[0]*p[0],p[1]*p[1],p[2]*p[2]];}
+function c2st(X,Y){
+  const tr=[],te=[];X.forEach((p,i)=>(i%2?te:tr).push([feats(p),1]));Y.forEach((p,i)=>(i%2?te:tr).push([feats(p),0]));
+  const D=6,mu=Array(D).fill(0),sd=Array(D).fill(0);
+  tr.forEach(([f])=>f.forEach((v,j)=>mu[j]+=v/tr.length));tr.forEach(([f])=>f.forEach((v,j)=>sd[j]+=(v-mu[j])**2/tr.length));
+  const z=f=>f.map((v,j)=>(v-mu[j])/(Math.sqrt(sd[j])+1e-9));
+  const w=Array(D).fill(0);let b0=0;const lr=0.5;
+  const TR=tr.map(([f,y])=>[z(f),y]),TE=te.map(([f,y])=>[z(f),y]);
+  for(let it=0;it<300;it++){const g=Array(D).fill(0);let gb=0;
+    TR.forEach(([f,y])=>{let s=b0;for(let j=0;j<D;j++)s+=w[j]*f[j];const p=1/(1+Math.exp(-s)),e=p-y;for(let j=0;j<D;j++)g[j]+=e*f[j];gb+=e;});
+    for(let j=0;j<D;j++)w[j]-=lr*(g[j]/TR.length+1e-3*w[j]);b0-=lr*gb/TR.length;}
+  const sc=TE.map(([f,y])=>{let s=b0;for(let j=0;j<D;j++)s+=w[j]*f[j];return [s,y];});
+  const pos=sc.filter(x=>x[1]===1).map(x=>x[0]),neg=sc.filter(x=>x[1]===0).map(x=>x[0]);
+  let c=0;pos.forEach(p=>neg.forEach(q=>{c+=p>q?1:(p===q?0.5:0);}));
+  const auc=c/(pos.length*neg.length);return Math.max(auc,1-auc);
+}
+function mm(){
+  const sh=+$('sh').value,sc=+$('sc').value,fp=+$('fpr').value;
+  $('shv').textContent=sh.toFixed(2);$('scv').textContent=sc.toFixed(2);$('fprv').textContent=fp.toFixed(2);
+  const A=base.A.map(p=>[p[0],p[1],0.03*p[2]]);
+  const B=base.B.map(p=>[sc*p[0]+sh,sc*p[1],0.03*p[2]+fp]);
+  const v=mmd2(A,B), auc=c2st(A,B);
+  const W=860,H=280,cx=200,cy=140,S=38;
+  let g=`<rect x="20" y="10" width="360" height="260" fill="none" stroke="${css('--line')}" rx="8"/>`;
+  const ca=css('--blue'),cb=css('--red');
+  A.forEach(p=>{const x=cx+S*p[0],y=cy-S*p[1];if(x>22&&x<378&&y>12&&y<268)g+=`<circle cx="${x}" cy="${y}" r="2.4" fill="${ca}" opacity=".6"/>`;});
+  B.forEach(p=>{const x=cx+S*p[0],y=cy-S*p[1];if(x>22&&x<378&&y>12&&y<268)g+=`<circle cx="${x}" cy="${y}" r="2.4" fill="${cb}" opacity=".6"/>`;});
+  g+=`<text x="30" y="28" font-size="11">content dims 1–2 · <tspan fill="${ca}">real</tspan> vs <tspan fill="${cb}">generated</tspan></text>`;
+  // bars
+  const bx=440,bwid=380;
+  const mScaled=Math.min(1,v/0.5);
+  g+=`<text x="${bx}" y="60" font-size="12">MMD² (RBF, median bandwidth)</text><rect x="${bx}" y="68" width="${bwid}" height="18" fill="${css('--soft')}" rx="4"/><rect x="${bx}" y="68" width="${bwid*mScaled}" height="18" fill="${css('--violet')}" rx="4"/><text x="${bx+bwid}" y="100" font-size="10" text-anchor="end">bar full at 0.5</text>`;
+  g+=`<text x="${bx}" y="150" font-size="12">C2ST held-out AUC (0.5 = chance)</text><rect x="${bx}" y="158" width="${bwid}" height="18" fill="${css('--soft')}" rx="4"/><rect x="${bx}" y="158" width="${bwid*Math.max(0,(auc-0.5)/0.5)}" height="18" fill="${css('--amber')}" rx="4"/><text x="${bx+bwid}" y="190" font-size="10" text-anchor="end">bar from 0.5 to 1.0</text>`;
+  $('mmdplot').innerHTML=g;
+  const verdict = auc>0.9 && v<0.02 ? 'Classifier separates the sources easily, yet MMD says they are close. A fingerprint exists but carries little mass at the content scale.' : (v>0.05?'Real content shift: both metrics see it.':'Both near null: sources look alike at this sample size.');
+  $('ro3').innerHTML=`<div>MMD²: <b>${v.toFixed(4)}</b></div><div>C2ST AUC: <b>${auc.toFixed(3)}</b></div><div style="grid-column:1/-1">${verdict}</div>`;
+}
+['sh','sc','fpr'].forEach(id=>$(id).addEventListener('input',mm));
+$('resamp').onclick=()=>{seed=Math.floor(Math.random()*1e9);sampleBase();mm();};
+
+// ---------- final quiz ----------
+const QUIZ=[
+ ['Why can a screenshot-only policy be trained on generated trajectories without ever reconstructing the latent OS state?',
+  ['Its training signal depends on dynamics only through the marginal kernel P(o_{t+1} | h_t, a_t); any generator matching that kernel is indistinguishable to it',
+   'Because the latent state is deterministic, so screenshots fully determine it',
+   'Because SFT ignores observations and only learns action priors',
+   'Because image generators internally simulate the filesystem'],0,
+  'The agent never reads s_t, so the observation-level kernel obtained by marginalizing T and O is all that matters. That is the definition of interaction fidelity.'],
+ ['In a planner-first pipeline, which training signal is most robust to rendering defects in the next screenshot?',
+  ['Grounding the current step\'s click target on the clean pre-action frame',
+   'The next step\'s action label',
+   'The success/termination label at the end of the trajectory',
+   'The history-conditioned action at the final step'],0,
+  'The grounding label for step t uses only o_t and the target description. It doesn\'t depend on what the editor did afterward. Everything downstream of a defective transition inherits the mismatch, which helps explain why grounding gains are the cleanest win.'],
+ ['Predict: ε = 0.03 per transition, no drift, T = 12, perfect checker (r = 1, f = 0), and you <i>truncate at the first flag</i>. What fraction of kept instances have a defective history?',
+  ['0%, but yield at late steps drops because about 3% of trajectories end at each step',
+   'About 3%, the per-transition rate',
+   'About 30%, roughly 1 − 0.97^12',
+   'It is undefined because truncation removes everything after step 1'],0,
+  'With r = 1 every defect is flagged and everything after it is cut, so kept instances are clean. The cost is yield: P(instance t kept) = 0.97^t. Try it in the simulator.'],
+ ['Synthetic-vs-real C2ST AUC ≈ 1.0, and real-dataset-A-vs-real-dataset-B AUC ≈ 0.97. The MMD ratio (synthetic–real ÷ real–real) ≈ 1. What is the best conclusion?',
+  ['Generated data differs from real data about as much as real sources differ from each other; the classifier is detecting source fingerprints that every pipeline has',
+   'Generated data is out of distribution and should be discarded',
+   'The MMD computation is buggy because it disagrees with C2ST',
+   'Real datasets should be discarded since they are also separable'],0,
+  'C2ST is a very sensitive detector of any consistent difference. Read it against the real–real baseline, and then ask whether the separating features correlate with labels, not just with source.'],
+ ['You want your agent to recover when a click doesn\'t take effect. Which change to a generated-data pipeline most directly creates that supervision?',
+  ['Render the student\'s (possibly wrong) actions, then have the planner replan from the rendered screen, keeping the failed step and the fix',
+   'Increase the number of planner-generated trajectories 10×',
+   'Raise the QC checker\'s recall to 1.0',
+   'Use a higher-resolution image editor'],0,
+  'Recovery data needs states off the expert path, labeled with corrective actions. That\'s DAgger\'s on-policy labeling idea, implemented with a renderer plus a planner instead of a human expert.'],
+ ['Why is a generated visual world model a poor substitute for an executable environment in online RL for CUAs?',
+  ['No ground-truth state or verifier exists, so rewards come from a learned judge on generated pixels, and the policy can exploit the generator\'s and judge\'s blind spots',
+   'RL needs exactly 79k samples and generators produce fewer',
+   'Image generators are deterministic, so RL has no exploration',
+   'GRPO-style methods require text-only observations'],0,
+  'Optimization pressure finds whatever the reward model gets wrong. Real environments with programmatic checkers (OSWorld-style evaluators) close that hole, which is why the robust recipe is generated data for SFT and real environments for RL.'],
+ ['Design: a 2% per-transition defect rate is concentrated in typing and drag actions. Your agent\'s weakest tasks are long spreadsheet edits. What\'s the most targeted fix?',
+  ['Stratify QC by action type, with stricter checks and regeneration for type/drag transitions, and truncate trajectories at the first flagged step so long edits keep clean prefixes',
+   'Drop all trajectories longer than 5 steps',
+   'Lower the learning rate on synthetic data',
+   'Replace the locator with a bigger one'],0,
+  'Defects that concentrate in specific actions should be fixed where they occur. Truncating keeps long-horizon prefixes instead of throwing out whole trajectories, which matters because long trajectories are already under-represented after filtering.']
+];
+function mountQuiz(){$('quiz').innerHTML='';score=0;answered=0;$('score').textContent=0;$('qtotal').textContent=QUIZ.length;
+  shuffle(QUIZ.slice()).forEach((q,i)=>{const d=document.createElement('div');d.className='card';$('quiz').appendChild(d);mountMC(d,(i+1)+'. '+q[0],q[1],q[2],q[3],true);});}
+$('qreset').onclick=mountQuiz;
+
+// ---------- flashcards ----------
+const CARDS=[
+ ['What is "interaction fidelity"?','Faithfulness of generated next screenshots to P(o_{t+1} | h_t, a_t), the latent-marginalized observation kernel. It is all a pixel-only policy can learn dynamics from.'],
+ ['Why are planner-first labels "open-loop"?','Actions are fixed before rendering, so the next label ignores what the editor actually drew. A missing effect gives an input/label mismatch that teaches "assume the action worked."'],
+ ['Drop-instance vs. truncate filtering?','Dropping a flagged instance leaves its bad screenshot in later histories. Truncating at the first flag removes all downstream contamination, at the cost of late-step yield.'],
+ ['C2ST AUC ≈ 1 but MMD ratio ≈ 1?','A fingerprint exists (real sources have one too), but the mass of the difference at the content scale is like real cross-source variation. Next check: does the fingerprint correlate with labels?'],
+ ['Why do grounding gains transfer best?','Each step yields a (clean frame, target, point) triple from an independent locator. That supervision doesn\'t depend on whether the next transition was rendered faithfully.'],
+ ['Where should generated trajectories sit in a CUA stack?','Long-tail coverage and grounding during SFT cold start. Closed-loop RL and recovery learning belong in executable environments with verifiers.'],
+ ['How to get recovery data without an OS?','Render the student\'s actions, including mistakes, and have the planner replan from the rendered screen. That\'s DAgger-style on-policy labeling.']
+];
+CARDS.forEach(([f,b])=>{const d=document.createElement('div');d.className='flip';d.innerHTML=`<div class="flip-inner"><div class="flip-f"><b>Q.</b> ${f}<div class="small" style="margin-top:8px">click to flip</div></div><div class="flip-b"><b>A.</b> ${b}</div></div>`;d.onclick=()=>d.classList.toggle('on');$('cards').appendChild(d);});
+
+function drawAll(){drawPipe();prop();mm();}
+sampleBase();mountQuiz();drawAll();
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',drawAll);
+document.addEventListener('DOMContentLoaded',()=>{if(window.renderMathInElement)renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'\\(',right:'\\)',display:false}]});});
+</script>
+</body></html>
