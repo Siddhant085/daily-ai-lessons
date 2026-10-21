@@ -9,6 +9,9 @@ LESSON.html should be named YYYY-MM-DD-<slug>.html (date/slug inferred) or pass 
 --title defaults to the lesson's <title>. --tags accepts comma-separated values.
 cards.json: a JSON list of {"q","a","choices"?:[...],"explanation"?}.
 Re-publishing the same date+slug replaces the existing entry.
+
+Content rule (see LESSON_GUIDELINES.md): no equation without its variables defined. Every equation
+needs a where-list, one-sentence intuition, and a worked example (<div class="where">).
 """
 import argparse, datetime, html, json, pathlib, re, shutil, subprocess, sys
 
@@ -48,6 +51,12 @@ def main():
     if not isinstance(cards, list) or any(not isinstance(c, dict) or "q" not in c or "a" not in c for c in cards):
         sys.exit("cards.json must be a list of objects with 'q' and 'a'")
 
+    n_eq = len(re.findall(r'<div class="eq[^"]*">.*?</div>|\$\$.+?\$\$', text.split("<script>")[0] if "<body" not in text
+                          else text[:text.find("<script>", text.find("<body")) % (len(text) + 1)], re.S))
+    n_where = text.count('class="where"')
+    if n_where < n_eq:
+        print(f"WARNING: {n_eq} equations but only {n_where} 'where' blocks. LESSON_GUIDELINES.md: "
+              "no equation without its variables defined.", file=sys.stderr)
     if MARK not in text:
         b = re.search(r"<body[^>]*>", text, re.I)
         text = text[:b.end()] + NAV + text[b.end():] if b else NAV + text

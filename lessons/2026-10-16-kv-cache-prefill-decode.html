@@ -28,6 +28,7 @@ details{background:#f7f8fb;border:1px dashed #c9d1de;border-radius:8px;padding:8
 .flip-b{transform:rotateY(180deg);background:#f2f6ff;border-color:#4f7cff}
 .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.85em;margin:6px 0}
 .legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:middle}
+.where{background:#fffdf3;color:#1d2433;border:1px solid #f0e2b0;border-radius:8px;padding:8px 14px;margin:6px 0 14px;font-size:.9em;line-height:1.5}.where ul{margin:4px 0;padding-left:18px}.where p{margin:4px 0}
 </style></head><body><nav id="dal-nav" style="position:sticky;top:0;z-index:9999;display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;background:#111827;font:600 15px/1.2 system-ui,sans-serif"><a href="../" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">← Home</a><a href="../archive.html" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">Archive</a><a href="../review.html" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">Review</a></nav>
 <h1>KV caching &amp; prefill/decode for multimodal computer-use agents</h1>
 <p style="color:#667">Track: <b>fundamentals</b> · Lesson for Siddhant · Oct 16, 2026 · ~15 min</p>
@@ -58,10 +59,10 @@ details{background:#f7f8fb;border:1px dashed #c9d1de;border-radius:8px;padding:8
 Causal self-attention at position i needs keys and values for all positions ≤ i. In training (or a fresh prefill) you compute K and V for every token in parallel. In autoregressive decode you add <b>one</b> new token. Without a cache you would rebuild K,V for the entire prefix on every step — almost all of that work is identical to the previous step. The fix is trivial in concept and consequential in production: <b>write K,V once, read them forever after</b> (appending the new token's K,V each step).
 </div>
 <p>Standard scaled dot-product attention (Vaswani et al., 2017):</p>
-<div class="eq">Attention(Q, K, V) = softmax( Q K<sup>⊤</sup> / √d<sub>head</sub> ) V</div>
+<div class="eq">Attention(Q, K, V) = softmax( Q K<sup>⊤</sup> / √d<sub>head</sub> ) V</div><div class="where"><b>where:</b><ul><li>Q (queries), K (keys), V (values) = matrices with one row per token, produced by learned linear maps of the token vectors</li><li>K<sup>⊤</sup> = K transposed, so QK<sup>⊤</sup> holds every query·key dot product (how relevant token j is to token i)</li><li>d<sub>head</sub> = vector size per attention head; dividing by √d<sub>head</sub> keeps scores from growing with size</li><li>softmax (row-wise) turns each row of scores into weights summing to 1</li></ul><p><b>Intuition:</b> Each token looks at all (earlier) tokens, decides how relevant each is, and takes a weighted average of their values.</p><p><b>Worked example:</b> One query q=[1,0], keys k<sub>1</sub>=[1,0], k<sub>2</sub>=[0,1], d<sub>head</sub>=2: scores = [1/1.41, 0] ≈ [0.71, 0] → softmax ≈ [0.67, 0.33] → output = 0.67·v<sub>1</sub> + 0.33·v<sub>2</sub>.</p></div>
 <p>For one new query row q<sub>t</sub> ∈ ℝ<sup>d</sup> against cached K,V ∈ ℝ<sup>n×d</sup>:</p>
 <div class="eq">scores = q<sub>t</sub> K<sup>⊤</sup> / √d<sub>head</sub> &nbsp;∈ ℝ<sup>n</sup><br>
-out = softmax(scores) V &nbsp;∈ ℝ<sup>d</sup></div>
+out = softmax(scores) V &nbsp;∈ ℝ<sup>d</sup></div><div class="where"><b>where:</b><ul><li>q<sub>t</sub> = the single query vector of the new token at step t; ℝ<sup>d</sup> = a list of d real numbers</li><li>K, V ∈ ℝ<sup>n×d</sup> = cached keys and values for the n earlier tokens</li><li>scores ∈ ℝ<sup>n</sup> = one relevance score per cached token; out = the new token's attention output</li></ul><p><b>Intuition:</b> During decode only one new row is computed, and it just reads the cache.</p><p><b>Worked example:</b> n=1,000 cached tokens, d=128: one decode step does ~1,000×128 = 128k multiply-adds for scores (and as many for the weighted sum), versus ~1,000×1,000×128 = 128M if all n rows were recomputed.</p></div>
 <p>That is <b>O(n · d)</b> matvec work per head (per layer), not O(n² · d). The quadratic term appears when you have n queries at once (prefill).</p>
 
 <div class="q card" id="cc1"><b>Concept check.</b> If you decode T tokens <i>without</i> a KV cache, roughly how does attention cost scale vs with a cache?</div>
@@ -80,7 +81,7 @@ out = softmax(scores) V &nbsp;∈ ℝ<sup>d</sup></div>
 Rough attention FLOPs (one layer, one head, ignore constants):<br>
 Prefill ≈ c · n² · d<sub>head</sub><br>
 Decode (T steps, cache starts at n) ≈ c · Σ<sub>i=0</sub><sup>T−1</sup> (n+i) · d<sub>head</sub> ≈ c · (T n + T²/2) · d<sub>head</sub>
-</div>
+</div><div class="where"><b>where:</b><ul><li>n = prompt length (tokens prefilled); T = number of tokens generated afterwards</li><li>c = a constant we ignore; d<sub>head</sub> = head dimension</li><li>Σ<sub>i=0</sub><sup>T−1</sup>(n+i) = at decode step i the cache has n+i tokens to attend over</li></ul><p><b>Intuition:</b> Prefill pays for all pairs of prompt tokens at once; decode pays for one row per generated token.</p><p><b>Worked example:</b> n=10,000, T=50: prefill ∝ 10<sup>8</sup>; decode ∝ 50·10,000 + 50²/2 ≈ 5.0×10<sup>5</sup> — prefill is ~200× more attention work for a short click action.</p></div>
 <p>For agent actions, T is often tiny (a click JSON, a short plan line) while n is huge (screenshots + history). Then <b>prefill dominates</b> unless you incremental-cache. For long chain-of-thought dumps, decode catches up.</p>
 
 <div class="q card" id="cc2"><b>Concept check.</b> You have a warm prefix cache of 8k tokens, append a 2k-token screenshot, then decode 40 tokens of tool call. What work is new?</div>
@@ -113,9 +114,9 @@ Decode (T steps, cache starts at n) ≈ c · Σ<sub>i=0</sub><sup>T−1</sup> (n
 
 <h2>4. Memory: the KV cache formula</h2>
 <p>Per sequence (batch=1), storing keys and values:</p>
-<div class="eq">KV_bytes ≈ 2 × L × H<sub>kv</sub> × d<sub>head</sub> × n × bytes_per_elem</div>
+<div class="eq">KV_bytes ≈ 2 × L × H<sub>kv</sub> × d<sub>head</sub> × n × bytes_per_elem</div><div class="where"><b>where:</b><ul><li>2 = one copy for K and one for V; L = number of layers</li><li>H<sub>kv</sub> = number of key/value heads (fewer than query heads under GQA/MQA); d<sub>head</sub> = head size</li><li>n = tokens in the cache; bytes_per_elem = 2 for fp16/bf16</li></ul><p><b>Intuition:</b> Cache memory grows linearly with context length, layers, and the number of KV heads.</p><p><b>Worked example:</b> L=32, H<sub>kv</sub>=8, d<sub>head</sub>=128, fp16, n=8,192: 2×32×8×128×8,192×2 ≈ 1.07×10<sup>9</sup> bytes ≈ 1 GiB.</p></div>
 <p>For classical multi-head attention (MHA), H<sub>kv</sub> = H<sub>q</sub> and often H<sub>q</sub> · d<sub>head</sub> = d<sub>model</sub>, so</p>
-<div class="eq">KV_bytes ≈ 2 × L × d<sub>model</sub> × n × bytes_per_elem</div>
+<div class="eq">KV_bytes ≈ 2 × L × d<sub>model</sub> × n × bytes_per_elem</div><div class="where"><b>where:</b><ul><li>d<sub>model</sub> = model width = H<sub>q</sub>·d<sub>head</sub>; other symbols as above</li></ul><p><b>Intuition:</b> For plain multi-head attention the cache is two full-width vectors per token per layer.</p><p><b>Worked example:</b> See the worked numbers just below (0.5 MiB/token for a 32-layer, 4096-wide fp16 model).</p></div>
 <p><b>Worked example.</b> L=32, d<sub>model</sub>=4096, fp16 (2 bytes), MHA:</p>
 <div class="eq">bytes/token = 2 × 32 × 4096 × 2 = 524,288 ≈ 0.5 MiB/token<br>
 n = 8,192 → KV ≈ 4 GiB &nbsp;&nbsp;|&nbsp;&nbsp; n = 32,768 → KV ≈ 16 GiB</div>
@@ -129,9 +130,9 @@ n = 8,192 → KV ≈ 4 GiB &nbsp;&nbsp;|&nbsp;&nbsp; n = 32,768 → KV ≈ 16 Gi
 <li><b>API tile metering (GPT-4o / gpt-4.1 family, detail=high):</b> scale so the short side is ≤768, cover with 512×512 tiles, cost ≈ 85 + 170 × (#tiles). A 1024×768 image → 2×2 tiles → <b>85+680=765 tokens</b> (OpenAI vision docs). detail=low is a flat 85 — useless for precise grounding.</li>
 </ul>
 <p><b>Agent arithmetic.</b> Suppose each step adds one 765-token screenshot + 200 tokens of text/tools, and you keep raw history for H=30 steps with no compression:</p>
-<div class="eq">n ≈ n<sub>0</sub> + 30 × (765+200) ≈ n<sub>0</sub> + 28,950</div>
+<div class="eq">n ≈ n<sub>0</sub> + 30 × (765+200) ≈ n<sub>0</sub> + 28,950</div><div class="where"><b>where:</b><ul><li>n<sub>0</sub> = fixed prompt (system + tools) tokens</li><li>30 = steps kept in history; 765 = screenshot tokens per step; 200 = text/tool tokens per step</li></ul><p><b>Intuition:</b> Raw screenshot history makes the context grow by about a thousand tokens every step.</p><p><b>Worked example:</b> n<sub>0</sub>=3,000 → n ≈ 31,950 tokens by step 30; at 0.5 MiB/token (MHA example above) that is ~16 GiB of KV cache.</p></div>
 <p>Every <i>full</i> re-prefill pays ~O(n²) attention. Summed over the trajectory without prefix reuse:</p>
-<div class="eq">Σ<sub>t=1</sub><sup>H</sup> O(n<sub>t</sub>²) with n<sub>t</sub>≈t·S &nbsp;⇒&nbsp; O(S² H³)</div>
+<div class="eq">Σ<sub>t=1</sub><sup>H</sup> O(n<sub>t</sub>²) with n<sub>t</sub>≈t·S &nbsp;⇒&nbsp; O(S² H³)</div><div class="where"><b>where:</b><ul><li>H = number of agent steps; t = step index; S = tokens added per step (here ≈ 965)</li><li>n<sub>t</sub> = context length at step t; O(·) = "grows proportionally to", constants dropped</li></ul><p><b>Intuition:</b> If every step re-prefills the whole growing history, quadratic per-step cost summed over steps gives cubic growth in horizon.</p><p><b>Worked example:</b> Σ t² for t=1..H ≈ H³/3. Doubling H from 30 to 60 multiplies total re-prefill attention by ~8 (S² H³ → S²·8H³).</p></div>
 <p>That is the systems twin of OSWorld's long-horizon pain: not only do errors compound (Oct 13) — <b>compute compounds</b> if the harness is naive.</p>
 
 <div class="q card" id="cc3"><b>Concept check.</b> You need clickable coordinates on the <i>current</i> UI. Which history policy preserves grounding while attacking O(S² H³)?</div>

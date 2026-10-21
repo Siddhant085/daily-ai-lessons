@@ -23,6 +23,7 @@ details{background:#f7f8fb;border:1px dashed #c9d1de;border-radius:8px;padding:8
 .credit-row.head{font-weight:600;color:#555;border-bottom:2px solid #e3e7ee}
 .dotc{width:14px;height:14px;border-radius:50%;display:inline-block;vertical-align:middle;margin-right:4px}
 svg text{font-family:Inter,sans-serif;font-size:12px}
+.where{background:#fffdf3;border:1px solid #f0e2b0;border-radius:8px;padding:8px 14px;margin:-4px 0 14px;font-size:.9em}.where ul{margin:4px 0;padding-left:18px}.where p{margin:4px 0}
 </style></head><body><nav id="dal-nav" style="position:sticky;top:0;z-index:9999;display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;background:#111827;font:600 15px/1.2 system-ui,sans-serif"><a href="../" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">← Home</a><a href="../archive.html" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">Archive</a><a href="../review.html" style="color:#e5e7eb;text-decoration:none;padding:10px 12px;border-radius:8px;background:#1f2937">Review</a></nav>
 <h1>Temporal credit assignment: from REINFORCE to process rewards</h1>
 <p style="color:#667">Track: <b>fundamentals</b> · Lesson for Siddhant · Oct 14, 2026 · ~15 min</p>
@@ -34,6 +35,26 @@ svg text{font-family:Inter,sans-serif;font-size:12px}
 <li>OSWorld 2.0 grades ~27 weighted final-state checkpoints — what does that buy you that binary pass/fail does not?</li>
 </ol>
 <details><summary>Check yourself</summary>(1) Errors compound; state drifts; agents spend &lt;7% of budget on recovery/repair. (2) Local action success ≠ task success — grounding gets the pixel right, but the trajectory can still miss constraints, mid-task updates, or verification. (3) Partial checkpoints give a denser signal about <i>where</i> progress stalled, not just whether the whole job finished. Today's lesson goes to first principles: <b>why sparse terminal rewards make long trajectories nearly unlearnable</b>, and how process/step rewards (and those checkpoints) reshape credit assignment.</details></div>
+<h2>0. Notation glossary (read once, refer back)</h2>
+<div class="card"><p>Every symbol in this lesson, in the order it appears. Each equation below also repeats the symbols it uses.</p>
+<table><tr><th>Symbol</th><th>Plain meaning</th></tr>
+<tr><td>t, T</td><td>t = step index (0, 1, 2, …); T = final step of the episode</td></tr>
+<tr><td>s<sub>t</sub></td><td>state: what the agent sees at step t (screenshot + history)</td></tr>
+<tr><td>a<sub>t</sub></td><td>action taken at step t (click, type, …)</td></tr>
+<tr><td>r<sub>t</sub></td><td>reward: the score handed out right after step t (often 0)</td></tr>
+<tr><td>γ (gamma)</td><td>discount factor between 0 and 1: how much a reward k steps in the future counts (γ<sup>k</sup>)</td></tr>
+<tr><td>G<sub>t</sub></td><td>return: total (discounted) reward collected from step t to the end</td></tr>
+<tr><td>R(τ)</td><td>return of a whole trajectory (sparse case: 1 = task passed, 0 = failed)</td></tr><tr><td>τ (tau)</td><td>trajectory: one full episode s<sub>0</sub>,a<sub>0</sub>,r<sub>0</sub>,…,s<sub>T</sub></td></tr>
+<tr><td>θ (theta)</td><td>the policy's trainable parameters (model weights)</td></tr>
+<tr><td>π<sub>θ</sub>(a|s)</td><td>policy: probability the model picks action a in state s</td></tr>
+<tr><td>J(θ)</td><td>objective: average return the policy earns; we want to increase it</td></tr>
+<tr><td>E[·]</td><td>expectation: average over many random episodes</td></tr>
+<tr><td>∇<sub>θ</sub>log π<sub>θ</sub>(a|s)</td><td>score function: direction that makes action a more likely in s</td></tr><tr><td>α</td><td>learning rate (step size of each update)</td></tr><tr><td>∇<sub>θ</sub></td><td>gradient: direction to nudge θ to increase a quantity</td></tr>
+<tr><td>b(s), V(s)</td><td>baseline / value: expected return from state s ("how good is this situation on average")</td></tr>
+<tr><td>A<sub>t</sub></td><td>advantage: how much better step t turned out than expected (G<sub>t</sub> − V(s<sub>t</sub>))</td></tr>
+<tr><td>δ<sub>t</sub></td><td>TD error: one-step surprise r<sub>t</sub> + γV(s<sub>t+1</sub>) − V(s<sub>t</sub>)</td></tr>
+<tr><td>λ (lambda)</td><td>GAE mixing knob between 0 and 1: how far ahead to trust real rewards vs the value guess</td></tr>
+</table></div>
 
 <h2>1. Intuition first: who gets blamed at step 300?</h2>
 <div class="card note">
@@ -43,7 +64,7 @@ That is the <b>temporal credit assignment problem</b> (Sutton &amp; Barto): give
 </div>
 
 <h2>2. Formal MDP for computer-use</h2>
-<p>Cast a computer-use episode as an MDP ⟨𝒮, 𝒜, P, R, γ⟩:</p>
+<p>A <b>Markov decision process (MDP)</b> is the standard RL frame: a set of states 𝒮, a set of actions 𝒜, transition rules P (what the next state is after an action), a reward function R, and a discount γ. "Markov" means the next state depends only on the current state and action. Cast a computer-use episode as an MDP ⟨𝒮, 𝒜, P, R, γ⟩:</p>
 <ul>
 <li><b>State s<sub>t</sub></b>: screenshot I<sub>t</sub> plus (compressed) history — prior actions, ledger/constraints, tool results. Partial observability is real; we treat the agent's input as s<sub>t</sub>.</li>
 <li><b>Action a<sub>t</sub></b>: click(x,y), type(text), scroll, hotkey, or a tool call (bash, browser, ASK_USER). Discrete or continuous depending on the interface.</li>
@@ -51,34 +72,96 @@ That is the <b>temporal credit assignment problem</b> (Sutton &amp; Barto): give
 <li><b>Reward</b> (classic sparse setup): r<sub>t</sub> = 0 for t &lt; T, and r<sub>T</sub> ∈ {0, 1} from a binary task grader. Optionally discount γ ∈ (0,1].</li>
 </ul>
 <p>Policy π<sub>θ</sub>(a|s) is the VLM/LLM agent (parameters θ). Objective:</p>
-<div class="eq">J(θ) = E<sub>τ ~ π<sub>θ</sub></sub>[ G<sub>0</sub> ] &nbsp; where &nbsp; G<sub>t</sub> = Σ<sub>k=t</sub><sup>T</sup> γ<sup>k−t</sup> r<sub>k</sub></div>
+<div class="eq">J(θ) = E<sub>τ ~ π<sub>θ</sub></sub>[ G<sub>0</sub> ] &nbsp; where &nbsp; G<sub>t</sub> = Σ<sub>k=t</sub><sup>T</sup> γ<sup>k−t</sup> r<sub>k</sub></div><div class="where"><b>where:</b><ul><li>J(θ) = the objective: expected starting return of the policy with weights θ</li><li>τ ~ π<sub>θ</sub> = an episode sampled by running the policy; E averages over such episodes</li><li>G<sub>t</sub> = return from step t; G<sub>0</sub> is the return of the whole episode</li><li>Σ<sub>k=t</sub><sup>T</sup> = add up over steps k = t, t+1, …, T</li><li>γ<sup>k−t</sup> = discount: a reward k−t steps away is multiplied by γ that many times (γ between 0 and 1)</li><li>r<sub>k</sub> = reward at step k</li></ul><p><b>Intuition:</b> Training means making the average total reward per episode as large as possible, with rewards further in the future counting a bit less.</p><p><b>Worked example:</b> 3-step episode with rewards r<sub>0</sub>=0, r<sub>1</sub>=0, r<sub>2</sub>=1 and γ=0.9: G<sub>0</sub> = 0 + 0.9·0 + 0.81·1 = 0.81, G<sub>1</sub> = 0 + 0.9·1 = 0.9, G<sub>2</sub> = 1. With γ=1 all three equal 1 — the "single bit paints the whole trajectory" effect.</p></div>
 <p>With sparse terminal reward and γ≈1, G<sub>t</sub> = r<sub>T</sub> for every t — a single Bernoulli that paints the whole trajectory.</p>
 
-<h2>3. REINFORCE: the gradient and why variance explodes</h2>
-<p>Williams (1992) showed that the policy gradient can be estimated from sampled trajectories without differentiating through the environment. Start from the likelihood-ratio identity:</p>
-<div class="eq">∇<sub>θ</sub> J(θ) = E<sub>τ</sub>[ ∇<sub>θ</sub> log p<sub>θ</sub>(τ) · G<sub>0</sub> ]</div>
-<p>For a Markov trajectory, log p<sub>θ</sub>(τ) = Σ<sub>t</sub> log π<sub>θ</sub>(a<sub>t</sub>|s<sub>t</sub>) + terms independent of θ (dynamics). Pushing the return inside the sum (causality: only future rewards after t matter) gives the familiar form:</p>
-<div class="eq">∇J(θ) = E[ Σ<sub>t=0</sub><sup>T</sup> ∇ log π<sub>θ</sub>(a<sub>t</sub>|s<sub>t</sub>) · G<sub>t</sub> ]</div>
-<p>Monte Carlo estimate from one episode: for each (s<sub>t</sub>, a<sub>t</sub>), add ∇ log π · G<sub>t</sub> to the gradient accumulator.</p>
+<h2>3. REINFORCE from first principles</h2>
+<h3>3.1 What a policy is</h3>
+<p>A <b>policy</b> is a rule for choosing actions, written π<sub>θ</sub>(a|s): the <i>probability</i> of picking action a when you are in state s. It is a probability, not a single choice, because a learning agent has to try things. θ are the knobs (model weights) that set those probabilities. For an LLM/VLM agent, π<sub>θ</sub>(a|s) is literally the probability the model assigns to the action text given the screenshot and history.</p>
+<div class="eq">π<sub>θ</sub>(a|s) = softmax(θ)<sub>a</sub> = e<sup>θ<sub>a</sub></sup> / Σ<sub>a′</sub> e<sup>θ<sub>a′</sub></sup> &nbsp;&nbsp;(simplest case: one score θ<sub>a</sub> per action)</div>
+<div class="where"><b>where:</b><ul><li>θ<sub>a</sub> = a score ("logit") for action a; higher score → more likely</li><li>e<sup>x</sup> = exponential, always positive; dividing by the sum Σ<sub>a′</sub> over all actions a′ makes the probabilities add to 1</li></ul>
+<p><b>Intuition:</b> scores go in, probabilities come out; training means adjusting the scores.</p>
+<p><b>Worked example:</b> two actions, "Save to shared drive" (S) and "Save to Desktop" (D), θ = (0, 0) → π = (0.5, 0.5). θ = (1, 0) → π(S) = e/(e+1) ≈ 0.73.</p></div>
 
-<div class="card warn"><b>Why variance explodes with horizon.</b>
-<ul>
-<li>Under sparse r<sub>T</sub> ∈ {0,1} and γ=1, G<sub>t</sub> = r<sub>T</sub> for all t. Every timestep's gradient is scaled by the <i>same</i> random bit.</li>
-<li>A random policy on a hard task succeeds with probability p ≪ 1. Most rollouts contribute 0; rare successes contribute +1 everywhere. The estimator is high-variance Bernoulli noise.</li>
-<li>Even with denser rewards, Var(G<sub>t</sub>) grows with the number of future reward terms (roughly like horizon for undiscounted sums of comparable noise). Long episodes → noisier G<sub>t</sub> → noisier policy updates.</li>
-<li>Credit is smeared: a bad early action and a good late action get the same G<sub>t</sub>, so the gradient cannot preferentially reinforce the right decisions.</li>
-</ul>
-Intuition for computer-use: if only 1 in 100 long rollouts succeed, REINFORCE waits for those rare +1s and then upweights <i>every</i> action in them — including the lucky mistakes that happened not to kill the episode.
+<h3>3.2 The goal: maximize expected return</h3>
+<p>Running the policy produces a random trajectory τ and a return R(τ) (total reward; in the sparse setup, 1 if the task passed, else 0). We can't control the randomness, so we maximize the <b>average</b>:</p>
+<div class="eq">J(θ) = E<sub>τ~π<sub>θ</sub></sub>[R(τ)] = Σ<sub>τ</sub> p<sub>θ</sub>(τ) · R(τ)</div>
+<div class="where"><b>where:</b><ul><li>p<sub>θ</sub>(τ) = probability that the policy produces trajectory τ</li><li>R(τ) = return of that trajectory (here equal to G<sub>0</sub> from §2)</li><li>Σ<sub>τ</sub> = sum over every possible trajectory (we will never compute it exactly — we'll sample)</li></ul>
+<p><b>Intuition:</b> J is "success rate" when reward is pass/fail.</p>
+<p><b>Worked example:</b> one-step task: S passes (R=1), D fails (R=0). With π = (0.5, 0.5), J = 0.5·1 + 0.5·0 = 0.5; with π = (0.73, 0.27), J = 0.73.</p></div>
+
+<h3>3.3 The log-derivative trick, step by step</h3>
+<p>We want ∇<sub>θ</sub>J — the direction to move θ so J goes up. Problem: J is a sum over trajectories we can't enumerate, and the environment (the OS) isn't differentiable. The trick turns the gradient into an <i>average we can sample</i>.</p>
+<ol>
+<li><b>Differentiate the sum.</b> R(τ) doesn't depend on θ (the grader just scores the outcome), so only the probabilities get differentiated:
+<div class="eq">∇<sub>θ</sub>J = Σ<sub>τ</sub> ∇<sub>θ</sub>p<sub>θ</sub>(τ) · R(τ)</div></li>
+<li><b>Use the identity ∇ log p = ∇p / p</b> (chain rule: the derivative of log x is 1/x). Rearranged: ∇p = p · ∇ log p.
+<div class="eq">∇<sub>θ</sub>J = Σ<sub>τ</sub> p<sub>θ</sub>(τ) · ∇<sub>θ</sub>log p<sub>θ</sub>(τ) · R(τ) = E<sub>τ~π<sub>θ</sub></sub>[ ∇<sub>θ</sub>log p<sub>θ</sub>(τ) · R(τ) ]</div>
+A sum of "probability × something" is an expectation, so we can estimate it by running episodes and averaging.</li>
+<li><b>Expand the trajectory probability.</b> p<sub>θ</sub>(τ) = p(s<sub>0</sub>) · ∏<sub>t</sub> π<sub>θ</sub>(a<sub>t</sub>|s<sub>t</sub>) · P(s<sub>t+1</sub>|s<sub>t</sub>,a<sub>t</sub>). The log of a product is a sum of logs, and p(s<sub>0</sub>) and P (the OS) don't depend on θ, so their gradients are 0:
+<div class="eq">∇<sub>θ</sub>log p<sub>θ</sub>(τ) = Σ<sub>t=0</sub><sup>T</sup> ∇<sub>θ</sub>log π<sub>θ</sub>(a<sub>t</sub>|s<sub>t</sub>)</div>
+That's why we never need to differentiate the environment.</li>
+<li><b>Estimate with n sampled episodes</b> (Williams, 1992, REINFORCE):
+<div class="eq">∇<sub>θ</sub>J ≈ (1/n) Σ<sub>i=1</sub><sup>n</sup> Σ<sub>t</sub> ∇<sub>θ</sub>log π<sub>θ</sub>(a<sub>t</sub><sup>(i)</sup>|s<sub>t</sub><sup>(i)</sup>) · R(τ<sup>(i)</sup>), &nbsp;&nbsp; then θ ← θ + α · ∇<sub>θ</sub>J</div></li>
+</ol>
+<div class="where"><b>where:</b><ul><li>∇<sub>θ</sub> = gradient with respect to the weights θ; log = natural log</li>
+<li>p(s<sub>0</sub>) = chance of the start state; P(s<sub>t+1</sub>|s<sub>t</sub>,a<sub>t</sub>) = how the OS responds; ∏<sub>t</sub> = product over steps</li>
+<li>n = number of sampled episodes; superscript (i) = "from episode i"; α = learning rate (step size, e.g. 0.1)</li>
+<li>∇<sub>θ</sub>log π<sub>θ</sub>(a|s) = "score function": the direction in weight space that makes action a more likely in state s</li></ul>
+<p><b>Intuition (the whole algorithm in one sentence):</b> <b>after each episode, raise the log-probability of every action you took, in proportion to the return the episode got.</b> Good episodes make their actions more likely; zero-return episodes change nothing; (with negative returns) bad episodes make their actions less likely.</p>
+<p><b>Causality refinement:</b> an action can't affect rewards that came before it, so R can be replaced by G<sub>t</sub> (reward from step t on), giving ∇J = E[Σ<sub>t</sub> ∇ log π(a<sub>t</sub>|s<sub>t</sub>) · G<sub>t</sub>]. Same expectation, slightly less noise. With a single terminal reward, G<sub>t</sub> = R for every t, so it doesn't help here.</p></div>
+
+<h3>3.4 Worked example with actual numbers</h3>
+<div class="card">
+<p><b>(a) One step, two actions.</b> For softmax, ∇<sub>θ</sub>log π(a) = (one-hot of a) − π. Start θ = (0, 0), π = (0.5, 0.5), α = 0.1.</p>
+<table><tr><th>Episode</th><th>Action</th><th>R</th><th>∇ log π(a)</th><th>× R</th></tr>
+<tr><td>1</td><td>S</td><td>1</td><td>(1,0) − (0.5,0.5) = (+0.5, −0.5)</td><td>(+0.5, −0.5)</td></tr>
+<tr><td>2</td><td>D</td><td>0</td><td>(−0.5, +0.5)</td><td>(0, 0)</td></tr></table>
+<p>Average gradient = (0.25, −0.25). Update: θ = (0, 0) + 0.1·(0.25, −0.25) = (0.025, −0.025) → π(S) = σ(0.05) ≈ 0.5125. The success rate J went from 0.5 to 0.5125. Repeat many times and π(S) → 1.</p>
+<p><b>(b) Three steps, one of them bad, sparse reward.</b> Task: (1) open file, (2) pick folder, (3) confirm. Each step chooses good/bad with its own score; currently π(good) = 0.9 at steps 1 and 3 but only 0.5 at step 2. The task passes (R=1) only if all three are good. So ∇ log π(good) = +(1 − 0.9) = +0.1 at steps 1/3 and +0.5 at step 2; picking bad gives −0.9 / −0.5.</p>
+<table><tr><th>Episode</th><th>Actions (1,2,3)</th><th>R</th><th>Push on step 1</th><th>Push on step 2</th><th>Push on step 3</th></tr>
+<tr><td>A</td><td>good, good, good</td><td>1</td><td>+0.1</td><td>+0.5</td><td>+0.1</td></tr>
+<tr><td>B</td><td>good, <b>bad</b>, good</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td>C</td><td><b>bad</b>, good, good</td><td>0</td><td>0</td><td>0</td><td>0</td></tr></table>
+<p>Only success A teaches anything, and it pushes all three steps with the <b>same</b> R = 1. Failure B is the episode that contains the real lesson ("step 2's bad choice broke it"), yet it contributes exactly zero. Step 2 still gets the biggest push in A only because it was the least certain; nothing in R told the learner that step 2 was the problem.</p>
 </div>
 
+<h3>3.5 Why sparse terminal reward makes REINFORCE slow</h3>
+<div class="card warn"><ul>
+<li><b>Everyone shares one R.</b> Every step's gradient is ∇ log π(a<sub>t</sub>|s<sub>t</sub>) × the <i>same</i> number. The only thing distinguishing the bad step from the fine ones is a correlation between its action and R, which has to emerge statistically over many episodes.</li>
+<li><b>Buried in noise.</b> In each episode, the other steps' random choices also change R (and also add their own ±score terms to the gradient). For the step you care about, that's noise: the step's signal is the average difference in R between its good and bad choice; the noise is everything else that moves R.</li>
+<li><b>Grows with horizon.</b> More steps → more independent sources of failure → success becomes rarer (here 0.9<sup>N−1</sup>), so most episodes give R = 0 and no signal at all; the episodes that do succeed are a smaller fraction. In the widget below, the episodes needed to single out one bad step grow roughly like 1/0.9<sup>N</sup> — exponentially in horizon. Real agents have far more than two choices per step and correlated failures, which makes it much worse.</li>
+</ul></div>
+
+<h3>3.6 Interactive: how many episodes until the bad step stands out?</h3>
+<div class="card">
+<p>Toy model (mine, for intuition). N steps; each picks good with probability 0.9 except one <b>bad step</b> at position k, which is good only with probability 0.5. We estimate each step's REINFORCE gradient g<sub>t</sub> = (1[a<sub>t</sub> good] − π<sub>t</sub>) · (return − b) from simulated episodes, and report how many episodes are needed before the bad step's average gradient is reliably (3 standard errors) larger than a good step's: that is when the data "tells good steps from bad." n ≈ 9·Var(g<sub>k</sub> − g<sub>good</sub>) / (mean difference)².</p>
+<div class="ctl">
+<label>Horizon N: <input type="range" id="rN" min="2" max="60" value="10"> <b id="rNv"></b></label>
+<label>Bad step k: <input type="range" id="rK" min="1" max="10" value="3"> <b id="rKv"></b></label>
+<label>Reward: <select id="rMode"><option value="sparse">Sparse: R=1 only if all steps good</option><option value="dense">Per-step: +1 for each good step</option></select></label>
+<label><input type="checkbox" id="rBase"> subtract baseline b = average return</label>
+</div>
+<div>Episodes needed to tell the bad step from a good one<div class="bar"><div id="rBar" style="background:#d64545"></div><span id="rNeed"></span></div></div>
+<p style="font-size:.9em">Estimated gradient per step after 200 episodes (bad step in red; dashed = true mean of the bad step):</p>
+<svg id="rSvg" viewBox="0 0 600 160" style="width:100%;background:#fff;border:1px solid #e3e7ee;border-radius:8px"></svg>
+<p id="rTxt" style="font-size:.92em"></p>
+<p style="font-size:.9em;color:#555">Try: sparse, N=5 → roughly 20 episodes. N=30 → roughly 400, and it keeps growing about like 1/0.9<sup>N</sup> because only 0.9<sup>N−1</sup>·0.5 of episodes succeed and carry any signal. Move k: under sparse reward the position doesn't matter (every step shares one R). Switch to per-step reward <i>without</i> a baseline: it gets dramatically worse (hundreds of thousands of episodes at k=3, N=30), because G<sub>t</sub> is a big positive number full of noise from all the future steps — raw returns are a terrible multiplier. Tick the baseline: per-step reward drops to a few hundred, and late bad steps (k near N) become easy because little future noise remains. Numbers vary slightly run to run (20,000 simulated episodes).</p>
+</div>
+
+<h3>3.7 The fix this motivates: baselines and advantages</h3>
+<p>The widget shows the problem is <b>noise</b>, not a wrong direction (and that even dense rewards are useless if you multiply by raw, noisy returns): the gradient is correct on average but needs too many samples. Two cures, both developed next:</p>
+<ul><li><b>Baseline</b>: subtract a number b from R before multiplying. If b is "what you usually get", then success episodes push up (R − b &gt; 0) and failures push <i>down</i> (R − b &lt; 0), so failure B in the table above finally says "make these actions less likely." It provably doesn't change the average gradient (derivation below) but cuts variance.</li>
+<li><b>Advantage</b>: make the baseline state-dependent, A<sub>t</sub> = G<sub>t</sub> − V(s<sub>t</sub>): "was this step's outcome better than expected from here?" Combined with denser rewards (§7), it localizes blame to the step that caused it.</li></ul>
+<p><b>Worked example:</b> in the 3-step table, the average return is b = 0.9·0.5·0.9 ≈ 0.405. In episode B, step 2 chose bad, so its score term on the "good" logit is −0.5; times (R − b) = −0.405 gives +0.20: raise the "good" score, i.e. make the bad choice <i>less</i> likely. Without the baseline that episode contributed 0.</p>
 <details><summary>Mini derivation: why a state-independent baseline does not bias the gradient</summary>
 E[∇ log π<sub>θ</sub>(a|s) · b(s)] = Σ<sub>a</sub> π(a|s) ∇ log π(a|s) · b(s) = b(s) ∇ Σ<sub>a</sub> π(a|s) = b(s) ∇(1) = 0.
-So subtracting any function of s alone (or a constant) leaves ∇J unbiased while typically cutting variance. That is the door to baselines and advantages below.
+So subtracting any function of s alone (or a constant) leaves ∇J unbiased while typically cutting variance. That is the door to baselines and advantages below.<div class="where"><b>where:</b><ul><li>b(s) = baseline: any number that depends only on the state (not the action)</li><li>Σ<sub>a</sub> π(a|s) … = average over the actions the policy might pick in s</li><li>π ∇ log π = ∇π (since ∇log x = ∇x / x)</li><li>Σ<sub>a</sub> π(a|s) = 1, because probabilities sum to one; the gradient of a constant is 0</li></ul><p><b>Intuition:</b> Because action probabilities always sum to 1, pushing some up must push others down, so a shift that is the same for every action averages out to zero.</p><p><b>Worked example:</b> Two actions with π=0.7 and 0.3. Nudge θ so π becomes 0.75/0.25: ∇π = +0.05 and −0.05. Times b=5: 0.25 − 0.25 = 0. The baseline adds nothing on average.</p></div>
 </details>
 
 <h2>4. Interactive: horizon, discount, sparsity → learning signal</h2>
 <div class="card">
-<p>Toy model (mine, for intuition — not a theorem). Each step emits an independent reward with probability <i>sparsity</i> p<sub>r</sub> (else 0); when it fires, the magnitude is ±1 with equal chance. Return G<sub>0</sub> = Σ<sub>t=0</sub><sup>N−1</sup> γ<sup>t</sup> r<sub>t</sub>. We plot: (i) std of G<sub>0</sub> across rollouts, (ii) a crude "signal-to-noise" proxy |E[G<sub>0</sub>]| / (std(G<sub>0</sub>)+ε) when we inject a small systematic +δ bias on rewards (simulating a slightly better policy). Watch what happens as N grows and as you make rewards rarer.</p>
+<p>Toy model (mine, for intuition — not a theorem). Each step emits an independent reward with probability <i>sparsity</i> p<sub>r</sub> (else 0); when it fires, the magnitude is ±1 with equal chance. Return G<sub>0</sub> = Σ<sub>t=0</sub><sup>N−1</sup> γ<sup>t</sup> r<sub>t</sub>. We plot: (i) std of G<sub>0</sub> across rollouts, (ii) a crude "signal-to-noise" proxy |E[G<sub>0</sub>]| / (std(G<sub>0</sub>)+ε) when we inject a small systematic +δ bias on rewards (simulating a slightly better policy). Watch what happens as N grows and as you make rewards rarer.</p><div class="where"><b>where:</b><ul><li>N = horizon (number of steps); p<sub>r</sub> = chance a step emits a nonzero reward</li><li>r<sub>t</sub> = +1 or −1 when it fires (50/50), else 0; γ = discount</li><li>std(G<sub>0</sub>) = how much the return varies between rollouts (noise)</li><li>δ = a small extra average reward from a slightly better policy (here 0.05); ε = tiny number to avoid dividing by 0</li><li>SNR = |E[G<sub>0</sub>]| / std: how visible the improvement is above the noise</li></ul><p><b>Intuition:</b> More random reward terms add more noise than the small improvement adds signal, so long horizons drown the learning signal.</p><p><b>Worked example:</b> γ=1, p<sub>r</sub>=1: Var(G<sub>0</sub>) ≈ N (each step adds variance ≈1). N=4 → std≈2; mean = 4·0.05=0.2; SNR≈0.1. Mean signal grows like N·p<sub>r</sub>·δ while std grows like √(N·p<sub>r</sub>), so small p<sub>r</sub> (rare rewards) is what crushes SNR: N=100, p<sub>r</sub>=1 → SNR = 5/10 = 0.5; p<sub>r</sub>=0.03 → mean 0.15, std≈1.73, SNR≈0.09. With γ&lt;1, extra steps beyond ~1/(1−γ) add almost nothing.</p></div>
 <div class="ctl">
 <label>Horizon N: <input type="range" id="N" min="5" max="400" step="5" value="50"> <b id="Nv"></b></label>
 <label>Discount γ: <input type="range" id="g" min="50" max="100" value="99"> <b id="gv"></b></label>
@@ -92,18 +175,18 @@ So subtracting any function of s alone (or a constant) leaves ∇J unbiased whil
 
 <h2>5. Baselines and advantage</h2>
 <p>Replace G<sub>t</sub> with an <b>advantage</b>:</p>
-<div class="eq">A<sub>t</sub> = G<sub>t</sub> − b(s<sub>t</sub>) &nbsp;≈&nbsp; G<sub>t</sub> − V<sup>π</sup>(s<sub>t</sub>)</div>
+<div class="eq">A<sub>t</sub> = G<sub>t</sub> − b(s<sub>t</sub>) &nbsp;≈&nbsp; G<sub>t</sub> − V<sup>π</sup>(s<sub>t</sub>)</div><div class="where"><b>where:</b><ul><li>A<sub>t</sub> = advantage of the action at step t</li><li>G<sub>t</sub> = return actually obtained from step t</li><li>b(s<sub>t</sub>) = baseline for that state; the best common choice is V<sup>π</sup>(s<sub>t</sub>)</li><li>V<sup>π</sup>(s) = expected return from state s when following π (a learned estimate in practice)</li></ul><p><b>Intuition:</b> Judge an action by whether things went better or worse than usual from that situation, not by the raw score.</p><p><b>Worked example:</b> 3 steps, rewards [0,0,1], γ=1 → G = [1,1,1]. Value estimates V = [0.4, 0.6, 0.9] → A = [0.6, 0.4, 0.1]. Early steps get more credit because success was less expected there; had the episode failed (G=[0,0,0]), A = [−0.4, −0.6, −0.9].</p></div>
 <p>V<sup>π</sup>(s) = E[G<sub>t</sub> | s<sub>t</sub>=s] is the expected return from s. Then A<sub>t</sub> asks: <i>did this action do better or worse than average for this state?</i></p>
 <ul>
 <li><b>Unbiased:</b> as shown above, any b(s) (or constant) has expectation zero against ∇ log π.</li>
 <li><b>Lower variance:</b> G<sub>t</sub> and V(s<sub>t</sub>) are correlated; subtracting removes shared noise. A good baseline is the biggest free lunch in policy gradients.</li>
 <li><b>Still smeared under sparse rewards:</b> if G<sub>t</sub> = r<sub>T</sub> for all t, then A<sub>t</sub> = r<sub>T</sub> − V(s<sub>t</sub>). Early states with similar V still get nearly identical advantages when r<sub>T</sub> is the only signal — baselines help, but they do not invent intermediate credit.</li>
 </ul>
-<p>Actor-critic trains a critic V<sub>φ</sub> alongside the actor π<sub>θ</sub>, and uses V<sub>φ</sub>(s<sub>t</sub>) as the baseline (or bootstraps one-step TD: δ<sub>t</sub> = r<sub>t</sub> + γ V(s<sub>t+1</sub>) − V(s<sub>t</sub>)).</p>
+<p>Actor-critic trains a critic V<sub>φ</sub> alongside the actor π<sub>θ</sub>, and uses V<sub>φ</sub>(s<sub>t</sub>) as the baseline (or bootstraps one-step TD: δ<sub>t</sub> = r<sub>t</sub> + γ V(s<sub>t+1</sub>) − V(s<sub>t</sub>)).</p><div class="where"><b>where:</b><ul><li>V<sub>φ</sub> = critic: a value network with its own weights φ</li><li>δ<sub>t</sub> = TD (temporal-difference) error: reward now + discounted value of the next state − value of this state</li></ul><p><b>Intuition:</b> δ<sub>t</sub> is the one-step surprise: did this step leave you better off than the critic predicted?</p><p><b>Worked example:</b> V(s<sub>0</sub>)=0.4, step gives r<sub>0</sub>=0 and lands in s<sub>1</sub> with V=0.6, γ=1 → δ<sub>0</sub> = 0 + 0.6 − 0.4 = +0.2: the action looked good even before any real reward.</p></div>
 
 <h2>6. GAE intuition (λ-return) — without a full PPO tutorial</h2>
 <p>Schulman et al. (2016) introduced <b>Generalized Advantage Estimation</b>. Define the TD residual δ<sub>t</sub> = r<sub>t</sub> + γ V(s<sub>t+1</sub>) − V(s<sub>t</sub>). Then:</p>
-<div class="eq">Â<sub>t</sub><sup>GAE(γ,λ)</sup> = Σ<sub>l=0</sub><sup>∞</sup> (γλ)<sup>l</sup> δ<sub>t+l</sub></div>
+<div class="eq">Â<sub>t</sub><sup>GAE(γ,λ)</sup> = Σ<sub>l=0</sub><sup>∞</sup> (γλ)<sup>l</sup> δ<sub>t+l</sub></div><div class="where"><b>where:</b><ul><li>Â<sub>t</sub><sup>GAE(γ,λ)</sup> = estimated advantage at step t (hat = estimate)</li><li>δ<sub>t+l</sub> = TD error l steps later (defined just above)</li><li>l = how many steps ahead; Σ<sub>l=0</sub><sup>∞</sup> sums to the end of the episode (δ = 0 after it)</li><li>γ = discount; λ ∈ [0,1] = how much to trust later TD errors vs the critic</li></ul><p><b>Intuition:</b> Add up the upcoming one-step surprises, fading them by (γλ) each step: λ near 0 trusts the critic, λ near 1 trusts the real rewards.</p><p><b>Worked example:</b> Rewards [0,0,1], V = [0.4,0.6,0.9], γ=1, V after end = 0. δ = [0.2, 0.3, 0.1]. λ=0: Â<sub>0</sub>=0.2. λ=1: Â<sub>0</sub>=0.2+0.3+0.1=0.6 = G<sub>0</sub>−V(s<sub>0</sub>). λ=0.5: 0.2 + 0.5·0.3 + 0.25·0.1 = 0.375.</p></div>
 <ul>
 <li><b>λ = 0:</b> Â<sub>t</sub> = δ<sub>t</sub> — pure 1-step TD. Low variance, high bias (depends heavily on V).</li>
 <li><b>λ = 1:</b> Â<sub>t</sub> = G<sub>t</sub> − V(s<sub>t</sub>) — Monte Carlo advantage. Low bias, high variance.</li>
@@ -314,4 +397,27 @@ q[1].forEach((o,j)=>{const b=document.createElement('button');b.textContent=o;b.
 if(j===q[2]){b.className='ok';scr++;}else{b.className='bad';d.querySelectorAll('button')[q[2]].className='ok';}
 ex.textContent=(j===q[2]?'✓ Correct. ':'✗ Not quite. ')+q[3];$('score').textContent=`Score: ${scr}/${ans} answered (of ${Q.length})`;};d.appendChild(b);});
 d.appendChild(ex);qz.appendChild(d);});
+</script><script>
+(()=>{const $=id=>document.getElementById(id);
+function stats(N,k,mode,base){ // exact-ish via simulation of M episodes
+  const M=20000,P=t=>t===k-1?0.5:0.9; let sum=new Float64Array(N),sq=new Float64Array(N);
+  const b=new Float64Array(N); // baselines: expected return-to-go (dense) or success prob (sparse)
+  let ps=1;for(let t=0;t<N;t++)ps*=P(t);
+  for(let t=0;t<N;t++){if(mode==='sparse')b[t]=base?ps:0;else{let s=0;for(let u=t;u<N;u++)s+=P(u);b[t]=base?s:0;}}
+  const est=[],a=new Uint8Array(N),j=k===1?1:0;let ds=0,dq=0;
+  for(let m=0;m<M;m++){let all=1;for(let t=0;t<N;t++){a[t]=Math.random()<P(t)?1:0;all&=a[t];}
+    let G=0;const Gt=new Float64Array(N);for(let t=N-1;t>=0;t--){G+=a[t];Gt[t]=G;}
+    const gs=[];for(let t=0;t<N;t++){const R=mode==='sparse'?all:Gt[t];const g=(a[t]-P(t))*(R-b[t]);gs[t]=g;sum[t]+=g;sq[t]+=g*g;if(m===199)est[t]=sum[t]/200;}
+    const dd=gs[k-1]-gs[j];ds+=dd;dq+=dd*dd;}
+  const mean=Array.from(sum,s=>s/M),vr=Array.from(sq,(s,t)=>s/M-mean[t]*mean[t]);const dm=ds/M,dv=dq/M-dm*dm;return {mean,vr,est,ps,dm,dv};}
+function draw(){const N=+$('rN').value;$('rK').max=N;const k=Math.min(+$('rK').value,N);$('rNv').textContent=N;$('rKv').textContent=k;
+  const mode=$('rMode').value,base=$('rBase').checked,s=stats(N,k,mode,base),m=s.mean[k-1],v=s.vr[k-1];
+  const need=s.dm>1e-9?Math.ceil(9*s.dv/(s.dm*s.dm)):Infinity;
+  $('rNeed').textContent=isFinite(need)?need.toLocaleString()+' episodes':'never (no signal)';
+  $('rBar').style.width=Math.min(100,Math.log10(Math.max(1,need))/6*100)+'%';
+  const svg=$('rSvg'),W=600,H=160,mx=Math.max(...s.est.map(Math.abs),m*1.2,1e-3),bw=W/N;let h='<line x1="0" x2="600" y1="80" y2="80" stroke="#999"/>';
+  s.est.forEach((e,t)=>{const y=80-e/mx*70;h+=`<rect x="${t*bw+1}" width="${Math.max(1,bw-2)}" y="${Math.min(y,80)}" height="${Math.abs(80-y)}" fill="${t===k-1?'#d64545':'#9fb3d9'}"/>`;});
+  const ym=80-m/mx*70;h+=`<line x1="0" x2="600" y1="${ym}" y2="${ym}" stroke="#d64545" stroke-dasharray="4"/>`;svg.innerHTML=h;
+  $('rTxt').textContent=`${mode==='sparse'?`Success rate of an episode: ${(s.ps*100).toFixed(2)}%. `:''}Bad step: true mean gradient ${m.toFixed(4)}, good-step mean ${(s.mean[k===1?1:0]).toFixed(4)}; gap ${s.dm.toFixed(4)} vs per-episode std of the gap ${Math.sqrt(s.dv).toFixed(3)} → ~${isFinite(need)?need.toLocaleString():'∞'} episodes to tell them apart (3σ).`;}
+['rN','rK','rMode','rBase'].forEach(i=>$(i).addEventListener('input',draw));$('rMode').addEventListener('change',draw);draw();})();
 </script><script id="dal-complete-js" src="../assets/complete.js"></script></body></html>
