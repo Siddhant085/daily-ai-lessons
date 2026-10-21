@@ -3,7 +3,7 @@
 <header class="site"><nav><a class="brand" href="./">🧠 Daily AI</a>
 <a class="tab" href="./" aria-current="page">Home</a><a class="tab" href="archive.html" >Archive</a><a class="tab" href="review.html" >Review</a></nav></header>
 <main class="wrap" id="app"><p class="muted">Loading…</p></main>
-<script src="assets/site.js"></script><script>
+<script src="assets/site.js"></script><script src="assets/complete.js"></script><script>
 (async () => {
   const app = document.getElementById('app');
   const L = await DAL.loadLessons().catch(() => []);
@@ -21,6 +21,14 @@
     h += `<h2>${latest.date === today ? "Today's lesson" : 'Latest lesson'}</h2>` + DAL.lessonCard(latest, {cta: true});
   }
   h += `<div class="row"><a class="btn" href="archive.html">📚 Archive</a><a class="btn ${due ? 'primary' : ''}" href="review.html">🔁 Review${total ? ` (${due} due)` : ''}</a></div>`;
+  const done = await DALComplete.all('');
+  const n = L.filter(l => done[l.slug]).length, pct = L.length ? Math.round(100*n/L.length) : 0;
+  h += `<h2>Progress</h2><div class="card"><div><b>${n}/${L.length}</b> complete (${pct}%)</div>
+    <div style="height:12px;background:#8883;border-radius:6px;overflow:hidden;margin:8px 0"><div style="height:100%;width:${pct}%;background:#16a34a"></div></div>
+    <ul style="list-style:none;padding:0;margin:0">${L.map(l => `<li style="display:flex;gap:8px;align-items:center;padding:6px 0">
+      <span>${done[l.slug] ? '✅' : '⬜'}</span><a style="flex:1" href="${DAL.esc(l.path)}">${DAL.esc(l.title)}</a>
+      ${done[l.slug] ? '' : `<button class="btn" data-slug="${DAL.esc(l.slug)}">Mark complete</button>`}</li>`).join('')}</ul></div>`;
   app.innerHTML = h;
+  app.querySelectorAll('button[data-slug]').forEach(b => b.onclick = () => { DALComplete.mark(b.dataset.slug); b.outerHTML = '✓'; });
 })();
 </script></body></html>

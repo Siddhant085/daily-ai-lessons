@@ -21,6 +21,9 @@ NAV = (f'<nav id="{MARK}" style="position:sticky;top:0;z-index:9999;display:flex
                  [("", "← Home"), ("archive.html", "Archive"), ("review.html", "Review")])
        + "</nav>")
 
+COMPLETE_MARK = "dal-complete-js"
+COMPLETE_TAG = '<script id="dal-complete-js" src="../assets/complete.js"></script>'
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("lesson"); ap.add_argument("--title"); ap.add_argument("--tags", default="fundamentals")
@@ -48,6 +51,9 @@ def main():
     if MARK not in text:
         b = re.search(r"<body[^>]*>", text, re.I)
         text = text[:b.end()] + NAV + text[b.end():] if b else NAV + text
+    if COMPLETE_MARK not in text:
+        i = text.lower().rfind("</body>")
+        text = text[:i] + COMPLETE_TAG + text[i:] if i >= 0 else text + COMPLETE_TAG
     rel = f"lessons/{date}-{slug}.html"
     (ROOT / "lessons").mkdir(exist_ok=True)
     (ROOT / rel).write_text(text, encoding="utf-8")
